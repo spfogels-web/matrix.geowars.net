@@ -179,6 +179,48 @@ body::before {
   100% { transform: translateX(0) scale(1); opacity: 1; }
 }
 
+/* Cinematic missile arc draw */
+@keyframes arc-draw {
+  from { stroke-dashoffset: 1200; }
+  to   { stroke-dashoffset: 0; }
+}
+.arc-draw { animation: arc-draw 1.4s cubic-bezier(0.4,0,0.2,1) forwards; }
+
+/* Cinematic satellite scan line */
+@keyframes sat-scan {
+  0%   { top: 0%; opacity: 0.6; }
+  100% { top: 100%; opacity: 0; }
+}
+.sat-scan { animation: sat-scan 1.6s linear infinite; }
+
+/* Shockwave ring expand */
+@keyframes shockwave-ring {
+  0%   { transform: scale(0.1); opacity: 0.9; }
+  100% { transform: scale(1);   opacity: 0; }
+}
+
+/* Impact white flash */
+@keyframes impact-flash {
+  0%   { opacity: 0.95; }
+  30%  { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+.impact-flash { animation: impact-flash 0.7s ease-out forwards; }
+
+/* Alert pulse */
+@keyframes alert-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+.alert-pulse { animation: alert-pulse 0.4s ease-in-out infinite; }
+
+/* Damage zone pulse */
+@keyframes damage-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%       { opacity: 0.25; }
+}
+.damage-pulse { animation: damage-pulse 2s ease-in-out infinite; }
+
 /* Cursor blink for typewriter effect */
 @keyframes cursor-blink {
   0%, 100% { opacity: 1; }

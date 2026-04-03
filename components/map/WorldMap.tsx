@@ -290,7 +290,11 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
   const [units, setUnits]           = useState<MapUnit[]>([]);
   const [hoveredZone, setHoveredZone]     = useState<string|null>(null);
   const [hoveredUnit, setHoveredUnit] = useState<{id:string; label:string; desc:string; x:number; y:number}|null>(null);
-  const [cinematic, setCinematic] = useState<{active:boolean; phase:'zoom'|'missile'|'impact'|'shockwave'|'done'; color:string; x:number; y:number; label:string}>({active:false,phase:'done',color:'#ff2d55',x:50,y:50,label:''});
+  type CinPhase = 'alert'|'zoom'|'satellite'|'missile'|'impact'|'shockwave'|'damage'|'report'|'done';
+  const [cinematic, setCinematic] = useState<{
+    active:boolean; phase:CinPhase; color:string; label:string;
+    originDir:[number,number]; targetLabel:string; eventType:string; impact:number;
+  }>({active:false,phase:'done',color:'#ff2d55',label:'',originDir:[0,1],targetLabel:'',eventType:'military',impact:8});
   const cinematicRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [hoveredCountry, setHoveredCountry] = useState<string|null>(null);
   const [mousePos, setMousePos]     = useState<{x:number;y:number}>({x:0,y:0});
@@ -323,18 +327,29 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
     // Sound
     playSound(cfg.soundType,ev.impact,audioCtxRef);
 
-    // Cinematic sequence for high-impact events
-    if(ev.impact>=7){
+    // Cinematic sequence — only for major strikes (impact >= 7)
+    const isMajorStrike = ev.impact >= 7 && (ev.type === 'military' || ev.type === 'nuclear');
+    if(isMajorStrike){
       cinematicRef.current.forEach(t=>clearTimeout(t));
       cinematicRef.current=[];
-      const mapEl=mapDivRef.current;
-      const cx=mapEl?50:50, cy=mapEl?50:50;
-      const label=ev.title.length>40?ev.title.slice(0,40)+'…':ev.title;
-      setCinematic({active:true,phase:'zoom',color,x:cx,y:cy,label});
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'missile'})),800));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),2200));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),3000));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,active:false,phase:'done'})),5500));
+      const label = ev.title.length>42 ? ev.title.slice(0,42)+'…' : ev.title;
+      const originLead = ev.affectedLeaders[0];
+      const targetLead = ev.affectedLeaders[1] || ev.affectedLeaders[0];
+      const originC = LEADER_COORDS[originLead] || REGION_COORDS[ev.region] || [0,20] as [number,number];
+      const targetC = LEADER_COORDS[targetLead] || REGION_COORDS[ev.region] || [0,20] as [number,number];
+      // Direction vector from origin to target (normalized, for arrow display)
+      const dx = targetC[0]-originC[0], dy = targetC[1]-originC[1];
+      const dist = Math.sqrt(dx*dx+dy*dy)||1;
+      const originDir:[number,number] = [dx/dist, dy/dist];
+      setCinematic({active:true,phase:'alert',color,label,originDir,targetLabel:LEADER_NAMES[targetLead]||ev.region,eventType:ev.type,impact:ev.impact});
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'zoom'})),900));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'satellite'})),1800));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'missile'})),2600));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),4200));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),4700));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'damage'})),5200));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),7000));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,active:false,phase:'done'})),9500));
     }
 
     // Flash
@@ -512,58 +527,229 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
         }}/>
       )}
 
-      {/* ── Cinematic overlay ── */}
+      {/* ── CINEMATIC STRIKE SEQUENCE ── */}
       {cinematic.active&&(
-        <>
-          {/* Dark vignette tighten during zoom phase */}
-          <div className="absolute inset-0 pointer-events-none" style={{
-            zIndex:15,
-            background:`radial-gradient(ellipse at center,transparent ${cinematic.phase==='zoom'?'30%':'20%'},rgba(0,0,0,${cinematic.phase==='zoom'?0.55:cinematic.phase==='impact'?0.7:0.4}) 100%)`,
-            transition:'all 0.8s ease',
-          }}/>
-          {/* Impact flash */}
-          {(cinematic.phase==='impact'||cinematic.phase==='shockwave')&&(
-            <div className="absolute inset-0 pointer-events-none" style={{
-              zIndex:16,
-              background:`radial-gradient(circle at 50% 50%,${cinematic.color}45 0%,${cinematic.color}22 25%,transparent 60%)`,
-              animation:cinematic.phase==='impact'?'fade-out 1.2s ease-out forwards':'none',
+        <div className="absolute inset-0 pointer-events-none" style={{zIndex:25}}>
+
+          {/* Phase: ALERT — full-screen red flash + warning banner */}
+          {cinematic.phase==='alert'&&(
+            <>
+              <div className="absolute inset-0 impact-flash" style={{background:`${cinematic.color}28`,zIndex:26}}/>
+              <div className="absolute inset-x-0 top-0 flex flex-col items-center justify-center" style={{height:'100%',zIndex:27}}>
+                <div className="font-orbitron font-black alert-pulse text-center px-8 py-6 rounded-2xl"
+                  style={{
+                    background:'rgba(0,0,0,0.92)',
+                    border:`2px solid ${cinematic.color}`,
+                    boxShadow:`0 0 60px ${cinematic.color}60, inset 0 0 40px ${cinematic.color}10`,
+                    letterSpacing:'0.3em',
+                    fontSize:'clamp(18px,3vw,32px)',
+                    color:cinematic.color,
+                    textShadow:`0 0 30px ${cinematic.color}`,
+                  }}>
+                  {cinematic.eventType==='nuclear'?'☢ NUCLEAR LAUNCH DETECTED':'⚠ STRIKE EVENT DETECTED'}
+                </div>
+                <div className="font-mono mt-4 px-6 py-2 rounded-lg" style={{background:'rgba(0,0,0,0.8)',border:`1px solid ${cinematic.color}40`,color:'rgba(255,255,255,0.8)',fontSize:'13px',letterSpacing:'0.1em'}}>
+                  {cinematic.label}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Persistent dark vignette during active phases */}
+          {(cinematic.phase==='zoom'||cinematic.phase==='satellite'||cinematic.phase==='missile'||cinematic.phase==='impact'||cinematic.phase==='shockwave'||cinematic.phase==='damage'||cinematic.phase==='report')&&(
+            <div className="absolute inset-0" style={{
+              background:'radial-gradient(ellipse at center,transparent 25%,rgba(0,0,0,0.72) 100%)',
+              transition:'all 1s ease',
+              zIndex:26,
             }}/>
           )}
-          {/* Shockwave rings */}
-          {cinematic.phase==='shockwave'&&(
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{zIndex:16}}>
-              {[0,1,2].map(i=>(
+
+          {/* Phase: SATELLITE — scan line effect + grid overlay */}
+          {(cinematic.phase==='satellite'||cinematic.phase==='missile')&&(
+            <>
+              {/* Satellite scan line */}
+              <div className="absolute left-0 right-0 sat-scan" style={{
+                height:'2px',
+                background:`linear-gradient(90deg,transparent,${cinematic.color}80,${cinematic.color},${cinematic.color}80,transparent)`,
+                zIndex:27,
+                boxShadow:`0 0 12px ${cinematic.color}`,
+              }}/>
+              {/* Satellite grid */}
+              <div className="absolute inset-0" style={{
+                backgroundImage:`linear-gradient(${cinematic.color}08 1px,transparent 1px),linear-gradient(90deg,${cinematic.color}08 1px,transparent 1px)`,
+                backgroundSize:'30px 30px',
+                zIndex:26,
+              }}/>
+              {/* Corner brackets — war-room targeting reticle */}
+              {[['top-6 left-6','0 0','12px 0 0 12px'],['top-6 right-6','0 0','0 12px 12px 0'],['bottom-6 left-6','0 0','0 0 12px 12px'],['bottom-6 right-6','0 0','0 0 12px 12px']].map((_,i)=>{
+                const corners=[{t:6,l:6,br:'12px 0 0 0'},{t:6,r:6,br:'0 12px 0 0'},{b:6,l:6,br:'0 0 0 12px'},{b:6,r:6,br:'0 0 12px 0'}];
+                const c=corners[i];
+                return(
+                  <div key={i} className="absolute" style={{
+                    width:'32px',height:'32px',
+                    top:c.t,bottom:c.b,left:c.l,right:c.r,
+                    border:`2px solid ${cinematic.color}`,
+                    borderRadius:c.br,
+                    zIndex:28,
+                    boxShadow:`0 0 12px ${cinematic.color}50`,
+                  }}/>
+                );
+              })}
+            </>
+          )}
+
+          {/* Phase: MISSILE — SVG arc trajectory */}
+          {cinematic.phase==='missile'&&(
+            <svg className="absolute inset-0 w-full h-full" style={{zIndex:29}} viewBox="0 0 100 100" preserveAspectRatio="none">
+              {/* Trajectory arc — quadratic bezier */}
+              <path
+                d={`M 15,85 Q 50,10 85,50`}
+                fill="none"
+                stroke={cinematic.color}
+                strokeWidth="0.4"
+                strokeDasharray="1200"
+                strokeDashoffset="1200"
+                strokeLinecap="round"
+                opacity="0.9"
+                className="arc-draw"
+                style={{filter:`drop-shadow(0 0 3px ${cinematic.color})`}}
+              />
+              {/* Missile head dot traveling along arc */}
+              <circle r="1.2" fill={cinematic.color} opacity="0.95" style={{filter:`drop-shadow(0 0 4px ${cinematic.color})`}}>
+                <animateMotion dur="1.4s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1">
+                  <mpath xlinkHref="#missileArc"/>
+                </animateMotion>
+              </circle>
+              <path id="missileArc" d="M 15,85 Q 50,10 85,50" fill="none"/>
+              {/* Origin point */}
+              <circle cx="15" cy="85" r="1.5" fill={cinematic.color} opacity="0.6"/>
+              {/* Target reticle */}
+              <g opacity="0.85">
+                <circle cx="85" cy="50" r="4" fill="none" stroke={cinematic.color} strokeWidth="0.3">
+                  <animate attributeName="r" values="4;7;4" dur="0.8s" repeatCount="indefinite"/>
+                  <animate attributeName="opacity" values="0.85;0.3;0.85" dur="0.8s" repeatCount="indefinite"/>
+                </circle>
+                <circle cx="85" cy="50" r="1.2" fill={cinematic.color}/>
+                <line x1="82" y1="50" x2="78" y2="50" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
+                <line x1="88" y1="50" x2="92" y2="50" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
+                <line x1="85" y1="47" x2="85" y2="43" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
+                <line x1="85" y1="53" x2="85" y2="57" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
+              </g>
+              {/* Target label */}
+              <text x="87" y="48" fill={cinematic.color} fontSize="2.2" fontFamily="Share Tech Mono" opacity="0.8">
+                {cinematic.targetLabel}
+              </text>
+            </svg>
+          )}
+
+          {/* Phase: IMPACT — white core flash + radial burst */}
+          {cinematic.phase==='impact'&&(
+            <>
+              <div className="absolute inset-0 impact-flash" style={{
+                background:'rgba(255,255,255,0.18)',
+                zIndex:27,
+              }}/>
+              <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:28}}>
+                <div className="impact-flash" style={{
+                  width:'120px',height:'120px',borderRadius:'50%',
+                  background:`radial-gradient(circle,#ffffff 0%,${cinematic.color} 35%,transparent 70%)`,
+                  boxShadow:`0 0 80px ${cinematic.color},0 0 160px ${cinematic.color}40`,
+                }}/>
+              </div>
+            </>
+          )}
+
+          {/* Phase: SHOCKWAVE — expanding rings */}
+          {(cinematic.phase==='shockwave'||cinematic.phase==='damage')&&(
+            <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:27}}>
+              {[0,1,2,3].map(i=>(
                 <div key={i} className="absolute rounded-full" style={{
-                  width:`${80+i*120}px`, height:`${80+i*120}px`,
-                  border:`2px solid ${cinematic.color}`,
-                  animation:`pulse-ring 1.5s ${i*0.25}s ease-out forwards`,
+                  width:`${100+i*180}px`,
+                  height:`${100+i*180}px`,
+                  border:`${i===0?'3px':'1.5px'} solid ${cinematic.color}`,
+                  animation:`shockwave-ring ${1.2+i*0.3}s ${i*0.15}s cubic-bezier(0,0,0.2,1) forwards`,
                   opacity:0,
+                  boxShadow:`0 0 20px ${cinematic.color}60`,
                 }}/>
               ))}
+              {/* Inner blast core */}
+              <div style={{
+                width:'60px',height:'60px',borderRadius:'50%',
+                background:`radial-gradient(circle,${cinematic.color}80 0%,transparent 70%)`,
+                animation:'damage-pulse 2s ease-in-out infinite',
+              }}/>
             </div>
           )}
-          {/* Event title banner */}
-          {cinematic.phase!=='done'&&(
-            <div className="absolute left-1/2 pointer-events-none" style={{
-              zIndex:17,
-              top:'55px', transform:'translateX(-50%)',
-              background:'rgba(0,0,0,0.88)',
-              border:`1px solid ${cinematic.color}60`,
-              borderRadius:'8px',
-              padding:'8px 20px',
-              backdropFilter:'blur(12px)',
-              boxShadow:`0 0 30px ${cinematic.color}30`,
+
+          {/* Phase: DAMAGE — red zone overlay */}
+          {cinematic.phase==='damage'&&(
+            <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:26}}>
+              <div className="damage-pulse" style={{
+                width:'280px',height:'180px',
+                borderRadius:'50%',
+                background:`radial-gradient(ellipse,${cinematic.color}35 0%,${cinematic.color}15 45%,transparent 70%)`,
+                border:`1px solid ${cinematic.color}50`,
+              }}/>
+            </div>
+          )}
+
+          {/* Phase: REPORT — intel summary panel */}
+          {cinematic.phase==='report'&&(
+            <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:29}}>
+              <div className="font-mono rounded-2xl px-8 py-6 fade-in" style={{
+                background:'rgba(0,0,0,0.94)',
+                border:`1px solid ${cinematic.color}60`,
+                boxShadow:`0 0 50px ${cinematic.color}25,0 0 100px rgba(0,0,0,0.8)`,
+                backdropFilter:'blur(16px)',
+                maxWidth:'460px',
+                width:'90%',
+              }}>
+                <div className="font-orbitron font-bold mb-4" style={{color:cinematic.color,fontSize:'13px',letterSpacing:'0.25em',textAlign:'center'}}>
+                  ■ STRIKE ASSESSMENT REPORT
+                </div>
+                <div style={{borderTop:`1px solid ${cinematic.color}30`,paddingTop:'12px'}}>
+                  {[
+                    {l:'EVENT',v:cinematic.label},
+                    {l:'TYPE',v:cinematic.eventType.toUpperCase()},
+                    {l:'IMPACT LEVEL',v:`${cinematic.impact}/10 — ${cinematic.impact>=9?'CATASTROPHIC':cinematic.impact>=7?'SEVERE':'SIGNIFICANT'}`},
+                    {l:'TARGET ZONE',v:cinematic.targetLabel},
+                    {l:'STATUS',v:'IMPACT CONFIRMED · DAMAGE ASSESSMENT ONGOING'},
+                  ].map(({l,v})=>(
+                    <div key={l} className="flex gap-3 mb-2">
+                      <span style={{color:'rgba(255,255,255,0.35)',fontSize:'10px',width:'100px',flexShrink:0,letterSpacing:'0.08em'}}>{l}</span>
+                      <span style={{color:'rgba(255,255,255,0.88)',fontSize:'10px',lineHeight:'1.4'}}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 text-center font-orbitron" style={{color:`${cinematic.color}80`,fontSize:'9px',letterSpacing:'0.2em'}}>
+                  RETURNING TO COMMAND VIEW...
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Persistent status banner (all phases except alert/done) */}
+          {(cinematic.phase==='zoom'||cinematic.phase==='satellite'||cinematic.phase==='missile')&&(
+            <div className="absolute left-1/2" style={{
+              zIndex:30, top:'52px', transform:'translateX(-50%)',
+              background:'rgba(0,0,0,0.9)',
+              border:`1px solid ${cinematic.color}70`,
+              borderRadius:'8px', padding:'7px 18px',
+              backdropFilter:'blur(14px)',
+              boxShadow:`0 0 24px ${cinematic.color}25`,
               whiteSpace:'nowrap',
             }}>
-              <div className="font-orbitron font-bold text-center" style={{color:cinematic.color,fontSize:'13px',letterSpacing:'0.18em'}}>
-                {cinematic.phase==='zoom'?'⚠ INCOMING EVENT':cinematic.phase==='missile'?'🚀 STRIKE IN PROGRESS':cinematic.phase==='impact'?'💥 IMPACT CONFIRMED':'🌐 ASSESSING DAMAGE'}
+              <div className="font-orbitron font-bold text-center" style={{color:cinematic.color,fontSize:'12px',letterSpacing:'0.2em'}}>
+                {cinematic.phase==='zoom'?'TRACKING TARGET — CAMERA LOCK':''}
+                {cinematic.phase==='satellite'?'⬢ SATELLITE VIEW ENGAGED':''}
+                {cinematic.phase==='missile'?'🚀 STRIKE IN PROGRESS':''}
               </div>
-              <div className="font-mono text-center mt-1" style={{color:'rgba(255,255,255,0.7)',fontSize:'11px'}}>
+              <div className="font-mono text-center mt-0.5" style={{color:'rgba(255,255,255,0.55)',fontSize:'10px'}}>
                 {cinematic.label}
               </div>
             </div>
           )}
-        </>
+        </div>
       )}
 
       <ComposableMap projection="geoNaturalEarth1" projectionConfig={{scale:148,center:[0,10]}} style={{width:'100%',height:'100%'}}>
