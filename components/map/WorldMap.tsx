@@ -5,8 +5,11 @@ import { ConflictZone, GeoEvent, Leader } from '@/lib/engine/types';
 import NewsMarquee from './NewsMarquee';
 import CrisisLog from './CrisisLog';
 import CinematicFeed from './CinematicFeed';
+import WorldBriefing from './WorldBriefing';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+
+import { WorldState } from '@/lib/engine/types';
 
 interface Props {
   conflictZones: ConflictZone[];
@@ -17,6 +20,8 @@ interface Props {
   isExpanded: boolean;
   onExpandToggle: () => void;
   breakingIntel?: string[];
+  worldState?: WorldState;
+  onInitiate?: () => void;
 }
 
 const ISO_TO_LEADER: Record<string, string> = {
@@ -286,7 +291,7 @@ function playSound(soundType:string, impact:number, ctxRef:React.MutableRefObjec
   } catch(_){}
 }
 
-export default function WorldMap({ conflictZones, events, tension, isRunning, leaders, isExpanded, onExpandToggle, breakingIntel = [] }: Props) {
+export default function WorldMap({ conflictZones, events, tension, isRunning, leaders, isExpanded, onExpandToggle, breakingIntel = [], worldState, onInitiate }: Props) {
   const [arcs, setArcs]             = useState<Arc[]>([]);
   const [units, setUnits]           = useState<MapUnit[]>([]);
   const [hoveredZone, setHoveredZone]     = useState<string|null>(null);
@@ -344,14 +349,13 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
       const dist = Math.sqrt(dx*dx+dy*dy)||1;
       const originDir:[number,number] = [dx/dist, dy/dist];
       setCinematic({active:true,phase:'alert',color,label,originDir,targetLabel:LEADER_NAMES[targetLead]||ev.region,eventType:ev.type,impact:ev.impact});
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'zoom'})),900));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'satellite'})),1800));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'missile'})),2600));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),4200));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),4700));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'damage'})),5200));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),7000));
-      cinematicRef.current.push(setTimeout(()=>{setCinematic(p=>({...p,active:false,phase:'done'}));setFeedActive(true);},12000));
+      // Paced sequence — each phase has clear breathing room
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'zoom'})),1400));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'missile'})),3000));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),5200));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),5800));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),7500));
+      cinematicRef.current.push(setTimeout(()=>{setCinematic(p=>({...p,active:false,phase:'done'}));setFeedActive(true);},13000));
     }
 
     // Flash
@@ -1061,6 +1065,11 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
 
       {/* News marquee overlay — top of map */}
       <NewsMarquee simIntel={breakingIntel} tension={tension} />
+
+      {/* Pre-simulation world briefing — shows when not running */}
+      {!isRunning && worldState && onInitiate && (
+        <WorldBriefing state={worldState} onInitiate={onInitiate} />
+      )}
 
       {/* Cinematic feed — triggers after major strike sequence */}
       <CinematicFeed

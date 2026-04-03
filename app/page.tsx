@@ -56,12 +56,12 @@ export default function Home() {
     if (running && !wasRunningRef.current) {
       setSimStartTime(Date.now());
       setElapsed(0);
-      setTimeout(() => runTick(tickPendingRef, setIsProcessing), 800);
+      setTimeout(() => runTick(tickPendingRef, setIsProcessing), 8000);
     }
     if (!running && wasRunningRef.current) setSimStartTime(null);
     wasRunningRef.current = running;
     if (!running) return;
-    const timer = setInterval(() => runTick(tickPendingRef, setIsProcessing), 30000);
+    const timer = setInterval(() => runTick(tickPendingRef, setIsProcessing), 45000);
     return () => clearInterval(timer);
   }, [state?.isRunning, state?.isPaused]);
 
@@ -286,6 +286,8 @@ export default function Home() {
               {...mapProps}
               isExpanded={false}
               onExpandToggle={() => setMapExpanded(true)}
+              worldState={state}
+              onInitiate={() => control('start')}
             />
           </div>
           <div className="overflow-hidden" style={{ flex: feedExpanded ? '1 1 65%' : '1 1 38%', minHeight: 0 }}>
