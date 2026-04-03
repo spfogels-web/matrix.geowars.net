@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 import { getState, applyEvent, applyResponses } from '@/lib/engine/state';
 import { SYSTEM_PROMPTS, buildUserPrompt } from '@/lib/agents/prompts';
 import { getScenarioEvent, getRandomEvent } from '@/lib/engine/events';
+import { getNewsContext } from '@/lib/engine/newsContext';
 import { GeoEvent } from '@/lib/engine/types';
 
 // ── COOLDOWN / ROTATION TRACKING ─────────────────────────────────────────────
@@ -147,9 +148,15 @@ export async function POST() {
   }
 
   const cycleId = state.activeCycleId || 'tick';
-  const event = Math.random() < 0.6
-    ? getScenarioEvent(state.activeScenario, Math.floor(state.currentCycleNumber / 2), cycleId)
-    : getRandomEvent(cycleId);
+
+  // On tick 1, use the real-world seed event from news analysis if available
+  const newsCtx = getNewsContext();
+  const useSeed = state.tick === 0 && newsCtx?.seedEvent;
+  const event: GeoEvent = useSeed
+    ? { ...newsCtx!.seedEvent!, id: `evt_seed_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true }
+    : Math.random() < 0.6
+      ? getScenarioEvent(state.activeScenario, Math.floor(state.currentCycleNumber / 2), cycleId)
+      : getRandomEvent(cycleId);
 
   applyEvent(event);
 

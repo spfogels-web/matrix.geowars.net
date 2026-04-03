@@ -281,8 +281,26 @@ export function startCycle(): string {
 }
 
 // ── CONTROL ───────────────────────────────────────────────────────────────────
-export function startSim(scenarioId?: string) {
-  _setS({ ..._s(), isRunning: true, isPaused: false, activeScenario: scenarioId || _s().activeScenario });
+export function startSim(scenarioId?: string, ctx?: {
+  summary: string; dominantTheme: string; scenarioId: string;
+  headlines: string[]; fetchedAt: number;
+  initialTension?: number; hotLeaders?: string[];
+}) {
+  const scenario = scenarioId || ctx?.scenarioId || _s().activeScenario;
+  const tension = ctx?.initialTension ?? _s().globalTension;
+  const activeLeaderIds = ctx?.hotLeaders ?? _s().activeLeaderIds;
+  const intel = ctx?.headlines.slice(0, 6).map(h => `LIVE INTEL: ${h}`) ?? _s().breakingIntel;
+  _setS({
+    ..._s(),
+    isRunning: true,
+    isPaused: false,
+    activeScenario: scenario,
+    globalTension: tension,
+    threatLevel: getThreatLevel(tension),
+    activeLeaderIds,
+    breakingIntel: intel.length ? intel : _s().breakingIntel,
+    realWorldContext: ctx ? { summary: ctx.summary, dominantTheme: ctx.dominantTheme, scenarioId: ctx.scenarioId, headlines: ctx.headlines, fetchedAt: ctx.fetchedAt } : null,
+  });
   startCycle();
 }
 

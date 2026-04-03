@@ -141,4 +141,11 @@ export interface WorldState {
   outcomes: OutcomeScenario[];
   activeLeaderIds: string[];  // currently shown in stack
   breakingIntel: string[];
+  realWorldContext?: {
+    summary: string;
+    dominantTheme: string;
+    scenarioId: string;
+    headlines: string[];
+    fetchedAt: number;
+  } | null;
 }

@@ -38,8 +38,20 @@ export function buildUserPrompt(leader: Leader, event: GeoEvent, state: WorldSta
 
   const ind = state.indicators;
 
-  return `SIMULATION CYCLE ${state.currentCycleNumber} | TICK ${state.tick} | TENSION ${state.globalTension}/100 [${state.threatLevel}]
+  // Real-world news context — injected when available
+  const rwc = state.realWorldContext;
+  const realWorldSection = rwc ? `
+REAL-WORLD INTELLIGENCE BRIEF (today's actual news — treat as ground truth):
+  SITUATION: ${rwc.summary}
+  DOMINANT CRISIS: ${rwc.dominantTheme}
+  LIVE HEADLINES:
+${rwc.headlines.slice(0, 8).map(h => `    • ${h}`).join('\n')}
 
+Your response must be grounded in this real-world context. Reference specific real events where relevant.
+` : '';
+
+  return `SIMULATION CYCLE ${state.currentCycleNumber} | TICK ${state.tick} | TENSION ${state.globalTension}/100 [${state.threatLevel}]
+${realWorldSection}
 GLOBAL INDICATORS:
   Oil: $${ind.oilPrice}/bbl | Gold: $${ind.goldPrice}/oz | S&P: ${ind.sp500}
   VIX: ${ind.vixFear} | Shipping Disruption: ${ind.shippingDisruption}% | Recession Risk: ${ind.recessionRisk}%
@@ -63,5 +75,5 @@ YOUR ALLIANCES: ${leader.military.alliances.join(', ')}
 
 This event ${event.affectedLeaders.includes(leader.id) ? 'DIRECTLY AFFECTS YOU' : 'indirectly affects your interests'}.
 
-Respond as ${leader.name}. Be specific. Escalation 1=pure diplomacy, 10=military strike or equivalent. Address another leader or ALL. Be authentic to your national doctrine.`;
+Respond as ${leader.name}. Be specific. Reference real events from the intelligence brief above. Escalation 1=pure diplomacy, 10=military strike or equivalent. Address another leader or ALL. Be authentic to your national doctrine.`;
 }
