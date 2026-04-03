@@ -208,8 +208,8 @@ export default function Home() {
         {/* Chat toggle */}
         <button onClick={() => setChatOpen(v => !v)}
           className={`hdr-btn hdr-btn-purple shrink-0 font-orbitron font-bold`}
-          style={chatOpen ? { color: '#b44fff', borderColor: 'rgba(180,79,255,0.7)', background: 'rgba(180,79,255,0.16)', fontSize: '14px', padding: '12px 22px' } : { fontSize: '14px', padding: '12px 22px' }}>
-          {chatOpen ? '✕' : '💬'} COMMS
+          style={chatOpen ? { color: '#b44fff', borderColor: 'rgba(180,79,255,0.7)', background: 'rgba(180,79,255,0.16)', fontSize: '15px', padding: '14px 26px' } : { fontSize: '15px', padding: '14px 26px' }}>
+          {chatOpen ? '✕' : '📡'} AGENT COMMS
           {state.messages.length > 0 && (
             <span style={{ background: '#b44fff', color: '#000', borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>
               {Math.min(state.messages.length, 99)}
