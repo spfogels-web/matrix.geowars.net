@@ -349,7 +349,7 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),4700));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'damage'})),5200));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),7000));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,active:false,phase:'done'})),9500));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,active:false,phase:'done'})),12000));
     }
 
     // Flash
