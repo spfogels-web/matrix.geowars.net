@@ -4,6 +4,7 @@ import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker, Line } fr
 import { ConflictZone, GeoEvent, Leader } from '@/lib/engine/types';
 import NewsMarquee from './NewsMarquee';
 import CrisisLog from './CrisisLog';
+import CinematicFeed from './CinematicFeed';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
@@ -301,6 +302,7 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
   const [zoom, setZoom]             = useState(1);
   const [center, setCenter]         = useState<[number,number]>([10,25]);
   const [flashColor, setFlashColor] = useState<string|null>(null);
+  const [feedActive, setFeedActive] = useState(false);
   const mapDivRef = useRef<HTMLDivElement>(null);
 
   const audioCtxRef  = useRef<AudioContext|null>(null);
@@ -349,7 +351,7 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),4700));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'damage'})),5200));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),7000));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,active:false,phase:'done'})),12000));
+      cinematicRef.current.push(setTimeout(()=>{setCinematic(p=>({...p,active:false,phase:'done'}));setFeedActive(true);},12000));
     }
 
     // Flash
@@ -1059,6 +1061,17 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
 
       {/* News marquee overlay — top of map */}
       <NewsMarquee simIntel={breakingIntel} tension={tension} />
+
+      {/* Cinematic feed — triggers after major strike sequence */}
+      <CinematicFeed
+        active={feedActive}
+        color={cinematic.color}
+        eventTitle={cinematic.label}
+        targetLabel={cinematic.targetLabel}
+        eventType={cinematic.eventType}
+        impact={cinematic.impact}
+        onComplete={() => setFeedActive(false)}
+      />
 
       {/* Crisis log — bottom left */}
       <CrisisLog events={events} />
