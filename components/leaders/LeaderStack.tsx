@@ -1,6 +1,6 @@
 'use client';
-import { Leader } from '@/lib/engine/types';
-import { useState } from 'react';
+import { Leader, LeaderMessage } from '@/lib/engine/types';
+import { useState, useEffect, useRef } from 'react';
 
 interface Props {
   leaders: Leader[];
@@ -9,6 +9,7 @@ interface Props {
   isRunning: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  messages: LeaderMessage[];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -16,13 +17,32 @@ const STATUS_COLORS: Record<string, string> = {
   critical:'#ff2d55', diplomatic:'#b44fff', mobilizing:'#ff6a00', at_war:'#ff2d55',
 };
 
-// flagcdn.com 2-letter country codes
 const FLAG_CODE: Record<string, string> = {
   usa:'us', china:'cn', russia:'ru', iran:'ir', israel:'il',
   uk:'gb', france:'fr', germany:'de', turkey:'tr', saudiarabia:'sa',
   india:'in', pakistan:'pk', japan:'jp', southkorea:'kr',
   northkorea:'kp', ukraine:'ua', taiwan:'tw', nato:'un', europe:'eu',
 };
+
+// Typing speed (ms per character) — varies by leader personality
+const TYPING_SPEEDS: Record<string, number> = {
+  usa: 38, uk: 40, france: 42, germany: 44, japan: 40,
+  china: 58, russia: 62, iran: 72, northkorea: 80,
+  israel: 44, india: 50, pakistan: 68, ukraine: 46,
+  southkorea: 48, taiwan: 46, nato: 36, europe: 38,
+};
+
+const THINKING_PHRASES = [
+  'Analyzing situation...', 'Drafting response...', 'Assessing threat level...',
+  'Consulting intelligence...', 'Evaluating options...', 'Processing briefing...',
+];
+
+const SETTLED_LABELS = [
+  'Response transmitted', 'Statement logged', 'Communication sent',
+  'Position recorded', 'Dispatch confirmed',
+];
+
+type SpeakPhase = 'idle' | 'thinking' | 'typing' | 'settled';
 
 function LeaderAvatar({ leader, size = 72, isActive }: { leader: Leader; size?: number; isActive?: boolean }) {
   const [imgError, setImgError] = useState(false);
@@ -64,10 +84,35 @@ function LeaderAvatar({ leader, size = 72, isActive }: { leader: Leader; size?: 
   );
 }
 
-function LeaderCard({ leader, isActive, rank, isExpanded }: { leader: Leader; isActive: boolean; rank: number; isExpanded: boolean }) {
+function ThinkingDots() {
+  return (
+    <span className="inline-flex items-center gap-0.5 ml-1" style={{ verticalAlign: 'middle' }}>
+      {[0,1,2].map(i => (
+        <span key={i} className="typing-dot" style={{
+          display: 'inline-block', width: '5px', height: '5px',
+          borderRadius: '50%', background: 'currentColor', opacity: 0,
+        }} />
+      ))}
+    </span>
+  );
+}
+
+function LeaderCard({
+  leader, isActive, rank, isExpanded, latestMessage,
+}: {
+  leader: Leader; isActive: boolean; rank: number; isExpanded: boolean; latestMessage?: LeaderMessage;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const sc  = STATUS_COLORS[leader.status] || '#00f5ff';
-  const ac  = leader.aggression >= 75 ? '#ff2d55' : leader.aggression >= 50 ? '#ff6a00' : leader.aggression >= 30 ? '#ffd700' : '#00ff9d';
+  const [phase, setPhase] = useState<SpeakPhase>('idle');
+  const [displayedText, setDisplayedText] = useState('');
+  const [thinkingPhrase, setThinkingPhrase] = useState(THINKING_PHRASES[0]);
+  const [settledLabel, setSettledLabel] = useState(SETTLED_LABELS[0]);
+  const prevMsgId = useRef<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sc = STATUS_COLORS[leader.status] || '#00f5ff';
+  const ac = leader.aggression >= 75 ? '#ff2d55' : leader.aggression >= 50 ? '#ff6a00' : leader.aggression >= 30 ? '#ffd700' : '#00ff9d';
   const role = (leader as Leader & { role?: string }).role;
   const flagCode = FLAG_CODE[leader.id];
 
@@ -81,31 +126,86 @@ function LeaderCard({ leader, isActive, rank, isExpanded }: { leader: Leader; is
   const stmLen  = isExpanded ? 300 : 180;
   const avatarSize = isExpanded ? 80 : 70;
 
+  const isSpeaking = phase === 'thinking' || phase === 'typing';
+  const cardIsActive = isActive || isSpeaking;
+
+  // Detect new message and trigger animation
+  useEffect(() => {
+    if (!latestMessage || latestMessage.id === prevMsgId.current) return;
+    prevMsgId.current = latestMessage.id;
+
+    // Clear any running animation
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+    setPhase('thinking');
+    setDisplayedText('');
+    setThinkingPhrase(THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)]);
+    setSettledLabel(SETTLED_LABELS[Math.floor(Math.random() * SETTLED_LABELS.length)]);
+
+    const thinkDuration = 1400 + Math.random() * 1200;
+
+    timeoutRef.current = setTimeout(() => {
+      const fullText = latestMessage.content;
+      const speed = TYPING_SPEEDS[leader.id] ?? 55;
+      let i = 0;
+      setPhase('typing');
+      setDisplayedText('');
+
+      intervalRef.current = setInterval(() => {
+        i++;
+        setDisplayedText(fullText.substring(0, i));
+        if (i >= fullText.length) {
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          timeoutRef.current = setTimeout(() => setPhase('settled'), 500);
+        }
+      }, speed);
+    }, thinkDuration);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [latestMessage?.id]);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  const speakColor = `${sc}50`;
+
   return (
     <div
-      className={`rounded-xl cursor-pointer overflow-hidden relative transition-all duration-300 ${isActive ? 'scale-[1.005]' : ''}`}
+      className={`rounded-xl cursor-pointer overflow-hidden relative transition-all duration-300 ${cardIsActive ? 'scale-[1.005]' : ''} ${isSpeaking ? 'speak-glow' : ''}`}
       style={{
-        border: `1.5px solid ${sc}55`,
-        boxShadow: isActive
-          ? `0 0 35px ${sc}30, 0 0 70px ${sc}10, inset 0 0 40px rgba(0,0,0,0.2)`
-          : `0 0 14px rgba(0,0,0,0.7)`,
+        border: isSpeaking ? `1.5px solid ${sc}` : `1.5px solid ${sc}55`,
+        // @ts-ignore
+        '--speak-color': speakColor,
+        boxShadow: isSpeaking
+          ? `0 0 40px ${sc}40, 0 0 80px ${sc}15, inset 0 0 40px rgba(0,0,0,0.2)`
+          : cardIsActive
+            ? `0 0 35px ${sc}30, 0 0 70px ${sc}10, inset 0 0 40px rgba(0,0,0,0.2)`
+            : `0 0 14px rgba(0,0,0,0.7)`,
         minHeight: '210px',
         background: '#070310',
+        transition: 'border-color 0.4s ease, box-shadow 0.4s ease',
       }}
       onClick={() => setExpanded(!expanded)}>
 
-      {/* ── Flag background image ── */}
+      {/* Flag background */}
       {flagCode && (
         <img
           src={`https://flagcdn.com/w640/${flagCode}.png`}
           alt=""
           draggable={false}
           className="absolute inset-0 w-full h-full"
-          style={{ objectFit: 'cover', objectPosition: 'center top', opacity: 0.60, pointerEvents: 'none', userSelect: 'none' }}
+          style={{ objectFit: 'cover', objectPosition: 'center top', opacity: isSpeaking ? 0.75 : 0.60, pointerEvents: 'none', userSelect: 'none', transition: 'opacity 0.4s ease' }}
         />
       )}
 
-      {/* Gradient overlay: transparent top → very dark bottom */}
+      {/* Gradient overlay */}
       <div className="absolute inset-0" style={{
         background: 'linear-gradient(180deg, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.42) 35%, rgba(0,0,0,0.88) 62%, rgba(0,0,0,0.97) 100%)',
         zIndex: 1,
@@ -114,35 +214,42 @@ function LeaderCard({ leader, isActive, rank, isExpanded }: { leader: Leader; is
       {/* Corner accent */}
       <div className="absolute top-0 right-0 w-14 h-14 pointer-events-none" style={{ zIndex: 2 }}>
         <svg viewBox="0 0 56 56" className="w-full h-full">
-          <path d="M56,0 L56,18 L38,0 Z" fill={sc} opacity={0.3}/>
-          <path d="M56,0 L56,7 L49,0 Z" fill={sc} opacity={0.7}/>
+          <path d="M56,0 L56,18 L38,0 Z" fill={sc} opacity={isSpeaking ? 0.6 : 0.3}/>
+          <path d="M56,0 L56,7 L49,0 Z" fill={sc} opacity={isSpeaking ? 1 : 0.7}/>
         </svg>
       </div>
 
       {/* Scan line */}
-      <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg,transparent,${sc},transparent)`, opacity: isActive ? 1 : 0.4, zIndex: 3 }} />
-      {isActive && (
+      <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg,transparent,${sc},transparent)`, opacity: cardIsActive ? 1 : 0.4, zIndex: 3 }} />
+      {cardIsActive && (
         <div className="absolute left-0 right-0 h-px" style={{
           background: `linear-gradient(90deg,transparent,${sc},transparent)`,
           animation: 'scanbeam 1.8s linear infinite', top: 0, zIndex: 3,
         }} />
       )}
 
-      {/* ── Content ── */}
+      {/* Speaking phase indicator bar at top */}
+      {isSpeaking && (
+        <div className="absolute top-0 left-0 right-0 h-0.5" style={{
+          background: `linear-gradient(90deg, transparent, ${sc}, ${sc}, transparent)`,
+          zIndex: 4,
+          animation: 'speak-glow 1.8s ease-in-out infinite',
+        }} />
+      )}
+
+      {/* Content */}
       <div className="relative p-4" style={{ zIndex: 4 }}>
 
-        {/* Header row: avatar + name + agg */}
+        {/* Header row */}
         <div className="flex items-start gap-3 mb-3">
-          {/* Avatar with rank badge */}
           <div className="relative shrink-0">
-            <LeaderAvatar leader={leader} size={avatarSize} isActive={isActive} />
+            <LeaderAvatar leader={leader} size={avatarSize} isActive={cardIsActive} />
             <div className="absolute -top-2 -left-2 w-7 h-7 rounded-full flex items-center justify-center font-orbitron font-bold"
               style={{ background: `linear-gradient(135deg,${sc},${sc}bb)`, color: '#000', fontSize: '11px', boxShadow: `0 0 12px ${sc}` }}>
               {rank}
             </div>
           </div>
 
-          {/* Name / role / status */}
           <div className="flex-1 min-w-0">
             <div className="font-orbitron font-bold" style={{
               color: leader.color, fontSize: nm, letterSpacing: '0.025em',
@@ -159,16 +266,44 @@ function LeaderCard({ leader, isActive, rank, isExpanded }: { leader: Leader; is
             <div className="font-mono" style={{ color: 'rgba(255,255,255,0.42)', fontSize: ct, textShadow: '0 1px 4px rgba(0,0,0,0.95)' }}>
               {leader.country.toUpperCase()}
             </div>
+            {/* Phase-aware status */}
             <div className="flex items-center gap-1.5 mt-1">
-              <div className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'status-blink' : ''}`}
-                style={{ backgroundColor: sc, boxShadow: `0 0 7px ${sc}` }} />
-              <span className="font-mono font-bold" style={{ color: sc, fontSize: st, letterSpacing: '0.1em', textShadow: `0 0 10px ${sc}80` }}>
-                {leader.status.replace('_', ' ').toUpperCase()}
-              </span>
+              {phase === 'thinking' && (
+                <>
+                  <div className="w-2 h-2 rounded-full status-blink" style={{ backgroundColor: sc, boxShadow: `0 0 7px ${sc}` }} />
+                  <span className="font-mono font-bold" style={{ color: sc, fontSize: st, letterSpacing: '0.1em' }}>
+                    {thinkingPhrase}<ThinkingDots />
+                  </span>
+                </>
+              )}
+              {phase === 'typing' && (
+                <>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: sc, boxShadow: `0 0 10px ${sc}` }} />
+                  <span className="font-mono font-bold" style={{ color: sc, fontSize: st, letterSpacing: '0.1em' }}>
+                    TRANSMITTING<ThinkingDots />
+                  </span>
+                </>
+              )}
+              {phase === 'settled' && (
+                <>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#00ff9d', boxShadow: '0 0 7px #00ff9d' }} />
+                  <span className="font-mono font-bold" style={{ color: '#00ff9d', fontSize: st, letterSpacing: '0.1em' }}>
+                    ✓ {settledLabel.toUpperCase()}
+                  </span>
+                </>
+              )}
+              {phase === 'idle' && (
+                <>
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${cardIsActive ? 'status-blink' : ''}`}
+                    style={{ backgroundColor: sc, boxShadow: `0 0 7px ${sc}` }} />
+                  <span className="font-mono font-bold" style={{ color: sc, fontSize: st, letterSpacing: '0.1em', textShadow: `0 0 10px ${sc}80` }}>
+                    {leader.status.replace('_', ' ').toUpperCase()}
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Aggression */}
           <div className="text-right shrink-0">
             <div className="font-orbitron font-black" style={{
               color: ac, fontSize: ag, lineHeight: 1,
@@ -189,21 +324,58 @@ function LeaderCard({ leader, isActive, rank, isExpanded }: { leader: Leader; is
           }} />
         </div>
 
-        {/* Quote */}
-        <div className="rounded-xl p-3 mb-2.5" style={{ background: 'rgba(0,0,0,0.65)', borderLeft: `3px solid ${sc}60`, backdropFilter: 'blur(8px)' }}>
-          <p className="font-exo italic" style={{ color: 'rgba(240,238,255,0.93)', fontSize: qt, lineHeight: '1.55' }}>
-            &ldquo;{leader.lastStatement.substring(0, stmLen)}{leader.lastStatement.length > stmLen ? '…' : ''}&rdquo;
-          </p>
+        {/* Quote / Typing area */}
+        <div className="rounded-xl p-3 mb-2.5" style={{
+          background: isSpeaking ? `rgba(0,0,0,0.75)` : 'rgba(0,0,0,0.65)',
+          borderLeft: `3px solid ${isSpeaking ? sc : sc + '60'}`,
+          backdropFilter: 'blur(8px)',
+          minHeight: '52px',
+          transition: 'border-color 0.3s ease',
+        }}>
+          {phase === 'thinking' && (
+            <div className="flex items-center gap-2 py-2">
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {[0,1,2].map(i => (
+                  <div key={i} className="typing-dot" style={{
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: sc, opacity: 0,
+                    boxShadow: `0 0 6px ${sc}`,
+                  }} />
+                ))}
+              </div>
+              <span className="font-mono" style={{ color: `${sc}80`, fontSize: '11px', fontStyle: 'italic' }}>
+                composing...
+              </span>
+            </div>
+          )}
+          {(phase === 'typing' || phase === 'settled') && (
+            <p className="font-exo italic" style={{ color: 'rgba(240,238,255,0.93)', fontSize: qt, lineHeight: '1.55' }}>
+              &ldquo;{displayedText}
+              {phase === 'typing' && (
+                <span className="cursor-blink" style={{ display: 'inline-block', width: '2px', height: '1em', background: sc, marginLeft: '2px', verticalAlign: 'text-bottom' }} />
+              )}
+              &rdquo;
+            </p>
+          )}
+          {phase === 'idle' && (
+            <p className="font-exo italic" style={{ color: 'rgba(240,238,255,0.93)', fontSize: qt, lineHeight: '1.55' }}>
+              &ldquo;{leader.lastStatement.substring(0, stmLen)}{leader.lastStatement.length > stmLen ? '…' : ''}&rdquo;
+            </p>
+          )}
         </div>
 
-        {/* Action */}
+        {/* Action row */}
         <div className="flex items-start gap-2 rounded-lg px-3 py-2.5"
           style={{ background: `${sc}12`, borderLeft: `3px solid ${sc}60`, backdropFilter: 'blur(6px)' }}>
           <span style={{ color: sc, fontSize: '14px', flexShrink: 0, marginTop: '1px' }}>▶</span>
-          <span className="font-mono" style={{ color: 'rgba(228,232,255,0.88)', fontSize: ac2, lineHeight: '1.45' }}>{leader.lastAction}</span>
+          <span className="font-mono" style={{ color: 'rgba(228,232,255,0.88)', fontSize: ac2, lineHeight: '1.45' }}>
+            {(phase === 'typing' || phase === 'settled') && latestMessage
+              ? latestMessage.action
+              : leader.lastAction}
+          </span>
         </div>
 
-        {/* Expanded economy/military detail */}
+        {/* Expanded detail */}
         {expanded && (
           <div className="mt-4 pt-3.5 border-t grid grid-cols-2 gap-4 fade-in" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
             <div>
@@ -239,10 +411,16 @@ function LeaderCard({ leader, isActive, rank, isExpanded }: { leader: Leader; is
   );
 }
 
-export default function LeaderStack({ leaders, activeIds, allLeaders: _allLeaders, isRunning, isExpanded, onToggleExpand }: Props) {
+export default function LeaderStack({ leaders, activeIds, allLeaders: _allLeaders, isRunning, isExpanded, onToggleExpand, messages }: Props) {
   const [showAll, setShowAll] = useState(false);
   const activeLeaders = leaders.filter(l => activeIds.includes(l.id));
   const watchlist = leaders.filter(l => !activeIds.includes(l.id)).slice(0, 10);
+
+  // Build a map of leaderId → latest message
+  const latestMsgMap = messages.reduce<Record<string, LeaderMessage>>((acc, m) => {
+    if (!acc[m.leaderId] || m.timestamp > acc[m.leaderId].timestamp) acc[m.leaderId] = m;
+    return acc;
+  }, {});
 
   return (
     <div className="h-full flex flex-col gap-2 overflow-hidden">
@@ -270,6 +448,7 @@ export default function LeaderStack({ leaders, activeIds, allLeaders: _allLeader
             key={l.id} leader={l} rank={i + 1}
             isActive={isRunning && l.lastActiveAt > Date.now() - 15000}
             isExpanded={isExpanded}
+            latestMessage={latestMsgMap[l.id]}
           />
         ))}
       </div>

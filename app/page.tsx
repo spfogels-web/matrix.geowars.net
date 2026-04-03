@@ -266,7 +266,7 @@ export default function Home() {
       <main className="flex-1 flex gap-2 p-2 overflow-hidden min-h-0">
 
         {/* Left: Leader Stack */}
-        <div className="shrink-0 overflow-hidden transition-all duration-300" style={{ width: leftExpanded ? '500px' : '310px' }}>
+\        <div className="shrink-0 overflow-hidden transition-all duration-300" style={{ width: leftExpanded ? '500px' : '310px' }}>
           <LeaderStack
             leaders={state.leaders.filter(l => state.activeLeaderIds.includes(l.id))}
             activeIds={state.activeLeaderIds}
@@ -274,6 +274,7 @@ export default function Home() {
             isRunning={state.isRunning && !state.isPaused}
             isExpanded={leftExpanded}
             onToggleExpand={() => setLeftExpanded(v => !v)}
+            messages={state.messages}
           />
         </div>
 
