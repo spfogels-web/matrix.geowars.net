@@ -26,7 +26,7 @@ export default function CrisisLog({ events }: Props) {
 
   return (
     <div className="absolute z-20"
-      style={{ bottom: '8px', left: '8px', width: open ? '300px' : '120px', transition: 'width 0.3s ease' }}>
+      style={{ bottom: '8px', left: '8px', width: open ? '340px' : '140px', transition: 'width 0.3s ease' }}>
 
       {/* Toggle bar */}
       <button
@@ -36,7 +36,7 @@ export default function CrisisLog({ events }: Props) {
           background: 'rgba(2,1,10,0.92)',
           border: '1px solid rgba(255,45,85,0.35)',
           borderRadius: open ? '10px 10px 0 0' : '10px',
-          fontSize: '10px', letterSpacing: '0.18em', color: '#ff2d55',
+          fontSize: '12px', letterSpacing: '0.18em', color: '#ff2d55',
           backdropFilter: 'blur(12px)',
           cursor: 'pointer',
         }}>
@@ -45,6 +45,7 @@ export default function CrisisLog({ events }: Props) {
         <span className="ml-auto font-mono" style={{ color: 'rgba(255,45,85,0.5)', fontSize: '9px' }}>
           {open ? '▼' : '▶'} {events.length}
         </span>
+
       </button>
 
       {open && (
@@ -54,7 +55,7 @@ export default function CrisisLog({ events }: Props) {
           borderTop: 'none',
           borderRadius: '0 0 10px 10px',
           backdropFilter: 'blur(12px)',
-          maxHeight: '280px',
+          maxHeight: '340px',
           overflowY: 'auto',
         }}>
           {recent.length === 0 && (
@@ -74,33 +75,38 @@ export default function CrisisLog({ events }: Props) {
                 }}>
                 {/* Row 1: icon + type + impact + time */}
                 <div className="flex items-center gap-1.5 mb-1">
-                  <span style={{ fontSize: '11px' }}>{icon}</span>
-                  <span className="font-orbitron font-bold" style={{ color: c, fontSize: '9px', letterSpacing: '0.1em' }}>
+                  <span style={{ fontSize: '13px' }}>{icon}</span>
+                  <span className="font-orbitron font-bold" style={{ color: c, fontSize: '11px', letterSpacing: '0.1em' }}>
                     {ev.type.toUpperCase()}
                   </span>
-                  <span className="font-orbitron font-bold" style={{ color: ev.impact >= 8 ? '#ff2d55' : ev.impact >= 5 ? '#ff6a00' : '#ffd700', fontSize: '11px', marginLeft: 'auto' }}>
+                  <span className="font-orbitron font-bold" style={{
+                    color: '#ffffff',
+                    fontSize: '13px',
+                    marginLeft: 'auto',
+                    textShadow: `0 0 10px ${ev.impact >= 8 ? '#ff2d55' : ev.impact >= 5 ? '#ff6a00' : '#ffd700'}`,
+                  }}>
                     {ev.impact}/10
                   </span>
-                  <span className="font-mono" style={{ color: 'rgba(255,255,255,0.25)', fontSize: '8.5px' }}>
+                  <span className="font-mono" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px' }}>
                     {fmt(ev.timestamp)}
                   </span>
                 </div>
                 {/* Row 2: title */}
-                <div className="font-mono font-bold" style={{ color: 'rgba(255,255,255,0.88)', fontSize: '10.5px', lineHeight: '1.4' }}>
+                <div className="font-mono font-bold" style={{ color: 'rgba(255,255,255,0.95)', fontSize: '12px', lineHeight: '1.4' }}>
                   {ev.title}
                 </div>
                 {/* Row 3: region + units dispatched */}
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="font-mono" style={{ color: 'rgba(255,255,255,0.35)', fontSize: '9px' }}>
+                  <span className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10.5px' }}>
                     📍 {ev.region}
                   </span>
                   {ev.type === 'military' && (
-                    <span className="font-mono" style={{ color: c, fontSize: '9px', opacity: 0.8 }}>
+                    <span className="font-mono" style={{ color: c, fontSize: '10px', opacity: 0.9 }}>
                       · {ev.impact >= 8 ? '✈✈✈ FIGHTER JETS + 🚢 FLEET' : ev.impact >= 5 ? '✈✈ FIGHTER JETS' : '✈ SORTIE'}
                     </span>
                   )}
                   {ev.type === 'nuclear' && (
-                    <span className="font-mono" style={{ color: '#ff2d55', fontSize: '9px' }}>
+                    <span className="font-mono" style={{ color: '#ff2d55', fontSize: '10px' }}>
                       · ☢ NUCLEAR ALERT
                     </span>
                   )}
