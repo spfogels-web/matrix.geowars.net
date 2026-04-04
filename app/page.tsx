@@ -143,11 +143,6 @@ export default function Home() {
         isRunning={state.isRunning && !state.isPaused}
       />
 
-      {/* ── World Briefing — full-screen overlay before sim starts ── */}
-      {!state.isRunning && (
-        <WorldBriefing state={state} onInitiate={() => control('start')} />
-      )}
-
       {/* ── Leaderboard modal ── */}
       <Leaderboard />
 
@@ -287,7 +282,7 @@ export default function Home() {
         </div>
 
         {/* Center: World Map + Live Feed */}
-        <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0 relative">
           <div className="rounded-xl overflow-hidden panel"
             style={{ flex: feedExpanded ? '1 1 35%' : '1 1 62%', minHeight: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
             <WorldMap
@@ -306,6 +301,11 @@ export default function Home() {
               onToggle={() => setFeedExpanded(v => !v)}
             />
           </div>
+
+          {/* ── World Briefing — overlays center column only ── */}
+          {!state.isRunning && (
+            <WorldBriefing state={state} onInitiate={() => control('start')} />
+          )}
         </div>
 
         {/* Right: Intel Panel */}

@@ -59,7 +59,7 @@ export default function WorldBriefing({ state, onInitiate }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col"
+      className="absolute inset-0 z-50 flex flex-col"
       style={{
         background: 'radial-gradient(ellipse at center, rgba(2,6,20,0.98) 0%, rgba(1,3,10,0.99) 100%)',
         transition: 'opacity 0.5s ease',
