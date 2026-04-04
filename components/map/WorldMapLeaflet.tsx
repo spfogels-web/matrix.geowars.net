@@ -334,9 +334,9 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     if (!mapDivRef.current || leafletMapRef.current) return;
 
     const map = L.map(mapDivRef.current, {
-      center: [25, 15],
-      zoom: 3,
-      minZoom: 2,
+      center: [35, 30],
+      zoom: 4,
+      minZoom: 3,
       maxZoom: 16,
       zoomControl: false,
       attributionControl: true,
@@ -502,7 +502,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
       // Return to overview after cinematic
       setTimeout(()=>{
-        if(leafletMapRef.current) leafletMapRef.current.flyTo(L.latLng(25,15),3,{duration:4,easeLinearity:0.25});
+        if(leafletMapRef.current) leafletMapRef.current.flyTo(L.latLng(35,30),4,{duration:4,easeLinearity:0.25});
       },16000);
     }
 
