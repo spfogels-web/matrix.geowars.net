@@ -339,13 +339,15 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
   const [feedActive, setFeedActive] = useState(false);
   const mapDivRef = useRef<HTMLDivElement>(null);
 
-  const audioCtxRef  = useRef<AudioContext|null>(null);
-  const panAnimRef   = useRef<ReturnType<typeof setInterval>|null>(null);
-  const unitAnimRef  = useRef<ReturnType<typeof setInterval>|null>(null);
-  const unitsRef     = useRef<MapUnit[]>([]);
-  const zoomRef      = useRef(1);
-  const centerRef    = useRef<[number,number]>([10,25]);
-  const lastEvIdRef  = useRef<string|null>(null);
+  const audioCtxRef        = useRef<AudioContext|null>(null);
+  const panAnimRef         = useRef<ReturnType<typeof setInterval>|null>(null);
+  const unitAnimRef        = useRef<ReturnType<typeof setInterval>|null>(null);
+  const unitsRef           = useRef<MapUnit[]>([]);
+  const zoomRef            = useRef(1);
+  const centerRef          = useRef<[number,number]>([10,25]);
+  const lastEvIdRef        = useRef<string|null>(null);
+  const cinematicActiveRef = useRef(false); // blocks overlapping cinematics
+  const lastPanTimeRef     = useRef(0);     // rate-limit auto-pan
 
   useEffect(()=>{ zoomRef.current=zoom; },[zoom]);
   useEffect(()=>{ centerRef.current=center; },[center]);
@@ -363,9 +365,10 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
     // Sound
     playSound(cfg.soundType,ev.impact,audioCtxRef);
 
-    // Cinematic sequence — only for major strikes (impact >= 7)
-    const isMajorStrike = ev.impact >= 7 && (ev.type === 'military' || ev.type === 'nuclear');
+    // Cinematic sequence — only for the largest strikes (impact >= 9), and never while one is already running
+    const isMajorStrike = ev.impact >= 9 && (ev.type === 'military' || ev.type === 'nuclear') && !cinematicActiveRef.current;
     if(isMajorStrike){
+      cinematicActiveRef.current = true;
       cinematicRef.current.forEach(t=>clearTimeout(t));
       cinematicRef.current=[];
       const label = ev.title.length>48 ? ev.title.slice(0,48)+'…' : ev.title;
@@ -403,12 +406,19 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),8000));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),9200));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),11500));
-      cinematicRef.current.push(setTimeout(()=>{setCinematic(p=>({...p,active:false,phase:'done'}));setFeedActive(true);},17000));
+      cinematicRef.current.push(setTimeout(()=>{
+        setCinematic(p=>({...p,active:false,phase:'done'}));
+        setFeedActive(true);
+        // Unlock after the broadcast overlay finishes (7s more)
+        setTimeout(()=>{ cinematicActiveRef.current=false; }, 7500);
+      },17000));
     }
 
-    // Flash
-    setFlashColor(color);
-    setTimeout(()=>setFlashColor(null),900);
+    // Subtle flash only for nuclear/high-impact (no flash for lower events — prevents shake feel)
+    if(ev.impact >= 9 || ev.type === 'nuclear'){
+      setFlashColor(color);
+      setTimeout(()=>setFlashColor(null),600);
+    }
 
     // Origin: use first affectedLeader's position or region
     const originLid = ev.affectedLeaders[0];
@@ -452,33 +462,43 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
     setArcs(newArcs);
     setTimeout(()=>setArcs([]),6000);
 
-    // Auto-pan — go to TARGET location (where the strike lands), not origin
-    const panTarget = ev.affectedLeaders[1]
-      ? (LEADER_COORDS[ev.affectedLeaders[1]] || REGION_COORDS[ev.region] || origin)
-      : (REGION_COORDS[ev.region] || origin);
-    const tgtC:[number,number]=[panTarget[0], panTarget[1]];
-    const tgtZ=ev.impact>=8?3.8:ev.impact>=5?3.0:2.3;
-    if(panAnimRef.current) clearInterval(panAnimRef.current);
-    const sC:[number,number]=[...centerRef.current] as [number,number];
-    const sZ=zoomRef.current; let step=0;
-    panAnimRef.current=setInterval(()=>{
-      step++;const t=easeInOut(step/40);
-      const nc:[number,number]=[lerp(sC[0],tgtC[0],t),lerp(sC[1],tgtC[1],t)];
-      const nz=lerp(sZ,tgtZ,t);
-      setCenter(nc);setZoom(nz);centerRef.current=nc;zoomRef.current=nz;
-      if(step>=40){
-        clearInterval(panAnimRef.current!);
-        setTimeout(()=>{
-          let s2=0;const hC:[number,number]=[...centerRef.current] as [number,number];const hZ=zoomRef.current;
-          panAnimRef.current=setInterval(()=>{
-            s2++;const bt=easeInOut(s2/40);
-            const bc:[number,number]=[lerp(hC[0],lerp(hC[0],10,0.4),bt),lerp(hC[1],lerp(hC[1],25,0.4),bt)];
-            setCenter(bc);setZoom(lerp(hZ,2.2,bt));centerRef.current=bc;zoomRef.current=lerp(hZ,2.2,bt);
-            if(s2>=40) clearInterval(panAnimRef.current!);
-          },50);
-        },10000);
-      }
-    },50);
+    // Auto-pan — only for high-impact events, rate-limited to one pan per 20s
+    const now = Date.now();
+    const shouldPan = ev.impact >= 8 && (now - lastPanTimeRef.current) > 20000;
+    if(shouldPan){
+      lastPanTimeRef.current = now;
+      const panTarget = ev.affectedLeaders[1]
+        ? (LEADER_COORDS[ev.affectedLeaders[1]] || REGION_COORDS[ev.region] || origin)
+        : (REGION_COORDS[ev.region] || origin);
+      const tgtC:[number,number]=[panTarget[0], panTarget[1]];
+      // Moderate zoom — not too close, keeps context visible
+      const tgtZ = ev.impact>=9 ? 3.2 : 2.6;
+      if(panAnimRef.current) clearInterval(panAnimRef.current);
+      const sC:[number,number]=[...centerRef.current] as [number,number];
+      const sZ=zoomRef.current; let step=0;
+      // 80 steps × 50ms = 4 second smooth pan
+      panAnimRef.current=setInterval(()=>{
+        step++; const t=easeInOut(step/80);
+        const nc:[number,number]=[lerp(sC[0],tgtC[0],t),lerp(sC[1],tgtC[1],t)];
+        const nz=lerp(sZ,tgtZ,t);
+        setCenter(nc);setZoom(nz);centerRef.current=nc;zoomRef.current=nz;
+        if(step>=80){
+          clearInterval(panAnimRef.current!);
+          // Return to global view after 12s
+          setTimeout(()=>{
+            let s2=0;
+            const hC:[number,number]=[...centerRef.current] as [number,number];
+            const hZ=zoomRef.current;
+            panAnimRef.current=setInterval(()=>{
+              s2++; const bt=easeInOut(s2/80);
+              const bc:[number,number]=[lerp(hC[0],10,bt),lerp(hC[1],25,bt)];
+              setCenter(bc);setZoom(lerp(hZ,1.8,bt));centerRef.current=bc;zoomRef.current=lerp(hZ,1.8,bt);
+              if(s2>=80) clearInterval(panAnimRef.current!);
+            },50);
+          },12000);
+        }
+      },50);
+    }
     return () => { cinematicRef.current.forEach(t=>clearTimeout(t)); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[events.length,isRunning]);
