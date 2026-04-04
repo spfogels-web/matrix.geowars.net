@@ -35,6 +35,8 @@ interface GameContextValue extends GameState {
   setWallet: (address: string | null) => void;
   placePrediction: (choice: 'yes' | 'no', amount: number, scenarioId: string, cycleNumber: number) => void;
   resolvePrediction: (outcome: 'yes' | 'no') => void;
+  resetSimPredictions: () => void;
+  simPredictionsUsed: number;
   showLeaderboard: boolean;
   setShowLeaderboard: (v: boolean) => void;
   showPrediction: boolean;
@@ -63,6 +65,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [totalEarned, setTotalEarned] = useState(0);
   const [totalPredictions, setTotalPredictions] = useState(0);
   const [wins, setWins] = useState(0);
+  const [simPredictionsUsed, setSimPredictionsUsed] = useState(0);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showPrediction, setShowPrediction] = useState(false);
 
@@ -93,12 +96,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (address) setShowPrediction(true);
   }, []);
 
+  const MAX_SIM_PREDICTIONS = 3;
+
+  const resetSimPredictions = useCallback(() => {
+    setSimPredictionsUsed(0);
+    setActivePrediction(null);
+  }, []);
+
   const placePrediction = useCallback((choice: 'yes' | 'no', amount: number, scenarioId: string, cycleNumber: number) => {
     if (amount > balance) return;
+    if (simPredictionsUsed >= MAX_SIM_PREDICTIONS) return;
     setBalance(b => b - amount);
     setActivePrediction({ choice, amount, scenarioId, cycleNumber, resolved: false, result: null, payout: 0 });
     setTotalPredictions(p => p + 1);
-  }, [balance]);
+    setSimPredictionsUsed(n => n + 1);
+  }, [balance, simPredictionsUsed]);
 
   const resolvePrediction = useCallback((outcome: 'yes' | 'no') => {
     setActivePrediction(prev => {
@@ -135,7 +147,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     <GameContext.Provider value={{
       wallet, balance, activePrediction, history, leaderboard,
       totalEarned, totalPredictions, wins,
-      setWallet, placePrediction, resolvePrediction,
+      setWallet, placePrediction, resolvePrediction, resetSimPredictions, simPredictionsUsed,
       showLeaderboard, setShowLeaderboard,
       showPrediction, setShowPrediction,
     }}>

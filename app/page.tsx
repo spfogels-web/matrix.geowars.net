@@ -31,7 +31,7 @@ async function runTick(pendingRef: React.MutableRefObject<boolean>, setProcessin
 }
 
 export default function Home() {
-  const { setShowLeaderboard } = useGame();
+  const { setShowLeaderboard, resetSimPredictions } = useGame();
   const [state, setState]           = useState<WorldState | null>(null);
   const [feedExpanded, setFeedExpanded] = useState(false);
   const [mapExpanded, setMapExpanded]   = useState(false);
@@ -56,6 +56,7 @@ export default function Home() {
     if (running && !wasRunningRef.current) {
       setSimStartTime(Date.now());
       setElapsed(0);
+      resetSimPredictions();
       setTimeout(() => runTick(tickPendingRef, setIsProcessing), 8000);
     }
     if (!running && wasRunningRef.current) setSimStartTime(null);

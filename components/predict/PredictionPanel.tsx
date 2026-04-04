@@ -20,7 +20,9 @@ interface Props {
 }
 
 export default function PredictionPanel({ scenarioId, cycleNumber, globalTension, isRunning }: Props) {
-  const { wallet, balance, activePrediction, placePrediction, resolvePrediction, showPrediction, setShowPrediction } = useGame();
+  const { wallet, balance, activePrediction, placePrediction, resolvePrediction, showPrediction, setShowPrediction, simPredictionsUsed } = useGame();
+  const MAX_SIM = 3;
+  const predictionsLeft = MAX_SIM - simPredictionsUsed;
   const [choice, setChoice] = useState<'yes' | 'no' | null>(null);
   const [amount, setAmount] = useState('50');
   const [submitted, setSubmitted] = useState(false);
@@ -128,6 +130,15 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
           <div className="font-mono" style={{ color: 'rgba(180,79,255,0.45)', fontSize: '10px', letterSpacing: '0.1em', marginTop: '1px' }}>
             CYCLE {cycleNumber} · DRAG TO MOVE
           </div>
+          <div className="flex gap-1 mt-1">
+            {[1,2,3].map(n => (
+              <div key={n} style={{
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: n <= predictionsLeft ? '#b44fff' : 'rgba(180,79,255,0.15)',
+                boxShadow: n <= predictionsLeft ? '0 0 6px rgba(180,79,255,0.7)' : 'none',
+              }}/>
+            ))}
+          </div>
         </div>
         {/* Drag grip indicator */}
         <div className="ml-auto flex items-center gap-3">
@@ -194,6 +205,11 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
                 <div className="font-mono mt-2" style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}>
                   Potential payout: <span style={{ color: '#00ff9d', fontWeight: 'bold' }}>{activePrediction.amount * 2} GWM</span>
                 </div>
+              </div>
+            ) : predictionsLeft === 0 ? (
+              <div className="text-center py-6 rounded-xl" style={{ background: 'rgba(255,45,85,0.06)', border: '1px solid rgba(255,45,85,0.2)' }}>
+                <div className="font-orbitron font-bold mb-1" style={{ color: '#ff2d55', fontSize: '13px', letterSpacing: '0.15em' }}>ALL 3 PREDICTIONS USED</div>
+                <div className="font-mono" style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>Resets when next simulation starts</div>
               </div>
             ) : !isRunning ? (
               <div className="text-center py-6 rounded-xl" style={{ background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.15)' }}>
