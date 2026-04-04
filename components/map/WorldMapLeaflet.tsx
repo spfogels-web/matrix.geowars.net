@@ -33,16 +33,45 @@ const LEADER_FLAGS: Record<string, string> = {
   pakistan:'🇵🇰',japan:'🇯🇵',southkorea:'🇰🇷',northkorea:'🇰🇵',
   ukraine:'🇺🇦',taiwan:'🇹🇼',nato:'🏛',
 };
-const NAVAL_BASES: Record<string, [number, number][]> = {
-  usa:[[-65,36],[-124,35],[-88,24]],russia:[[29,69],[155,50],[22,60]],
-  china:[[122,28],[113,20],[121,13]],uk:[[-4,54],[-2,50]],france:[[5,43],[-2,47]],
-  india:[[72,18],[80,11]],iran:[[56,23],[52,27]],northkorea:[[129,39]],
-  saudiarabia:[[37,22],[50,26]],israel:[[34,29]],japan:[[135,34],[140,38]],
-  taiwan:[[121,22]],
+// Named naval vessels: [lng, lat, shipName, type]
+const NAVAL_VESSELS: Record<string, [number,number,string,'carrier'|'destroyer'|'frigate'][]> = {
+  usa:[
+    [-65,36,'USS Gerald R. Ford','carrier'],
+    [-124,35,'USS Ronald Reagan','carrier'],
+    [-88,24,'USS Arleigh Burke','destroyer'],
+    [-30,38,'USS Nimitz','carrier'],
+    [130,32,'USS Carl Vinson','carrier'],
+  ],
+  russia:[
+    [29,69,'Admiral Kuznetsov','carrier'],
+    [155,50,'Marshal Ustinov','destroyer'],
+    [22,60,'Admiral Nakhimov','destroyer'],
+  ],
+  china:[
+    [122,28,'CNS Fujian','carrier'],
+    [113,20,'CNS Liaoning','carrier'],
+    [121,13,'CNS Shandong','carrier'],
+  ],
+  uk:[[-4,54,'HMS Queen Elizabeth','carrier'],[-2,50,'HMS Prince of Wales','carrier']],
+  france:[[5,43,'FS Charles de Gaulle','carrier'],[-2,47,'FS Aquitaine','frigate']],
+  india:[[72,18,'INS Vikrant','carrier'],[80,11,'INS Kolkata','destroyer']],
+  iran:[[56,23,'IRIS Jamaran','frigate'],[52,27,'IRIS Alborz','frigate']],
+  northkorea:[[129,39,'KPN Paektusan','destroyer']],
+  saudiarabia:[[37,22,'HNS Makkah','frigate'],[50,26,'HNS Tabuk','frigate']],
+  israel:[[34,29,'INS Leviathan','destroyer']],
+  japan:[[135,34,'JS Kaga','carrier'],[140,38,'JS Izumo','carrier']],
+  taiwan:[[121,22,'ROCS Yi Hua','frigate']],
 };
-const SUB_PATROL: Record<string, [number, number]> = {
-  usa:[-50,42],russia:[18,73],china:[130,16],uk:[-16,58],france:[-10,49],
-  india:[76,8],northkorea:[133,35],
+
+// Named submarines: [lng, lat, subName]
+const NAMED_SUBS: Record<string, [number,number,string][]> = {
+  usa:[[-50,42,'USS Ohio (SSBN)'],[- 35,55,'USS Michigan (SSBN)'],[-120,40,'USS Connecticut (SSN)']],
+  russia:[[18,73,'K-18 Karelia (SSBN)'],[35,68,'K-560 Severodvinsk (SSN)']],
+  china:[[130,16,'Type 094 Jin-class'],[118,22,'Type 093 Shang-class']],
+  uk:[[-16,58,'HMS Vanguard (SSBN)'],[- 5,54,'HMS Astute (SSN)']],
+  france:[[-10,49,'FS Le Triomphant'],[- 5,47,'FS Barracuda']],
+  india:[[76,8,'INS Arihant (SSBN)']],
+  northkorea:[[133,35,'Sinpo-class SSBN']],
 };
 const TYPE_COLORS: Record<string, string> = {
   military:'#ff2d55',economic:'#ffd700',cyber:'#00f5ff',
@@ -137,6 +166,7 @@ interface OverlayProps {
 function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tension }: OverlayProps) {
   const size = map.getSize();
   const W = size.x, H = size.y;
+  const [hoveredVessel, setHoveredVessel] = useState<{label:string;x:number;y:number}|null>(null);
 
   // Convert [lng, lat] → container pixel [x, y]
   const px = useCallback((lng: number, lat: number): [number, number] => {
@@ -148,6 +178,25 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
   const activeLeaderIds = new Set(leaders.filter(l=>l.status==='at_war'||l.status==='mobilizing'||l.status==='hostile').map(l=>l.id));
 
   return (
+    <>
+    {/* Vessel hover tooltip */}
+    {hoveredVessel && (
+      <div style={{
+        position:'absolute', zIndex:900,
+        left: Math.min(hoveredVessel.x+12, W-240),
+        top: Math.max(hoveredVessel.y-48, 44),
+        pointerEvents:'none',
+        background:'rgba(2,8,24,0.97)',
+        border:'1px solid rgba(0,200,255,0.55)',
+        borderRadius:'7px', padding:'7px 13px',
+        fontFamily:'Share Tech Mono, monospace',
+        fontSize:'12px', color:'#00f5ff',
+        letterSpacing:'0.08em', whiteSpace:'nowrap',
+        boxShadow:'0 0 20px rgba(0,200,255,0.25)',
+      }}>
+        {hoveredVessel.label}
+      </div>
+    )}
     <svg
       style={{ position:'absolute', top:0, left:0, width:W, height:H, pointerEvents:'none', zIndex:500, overflow:'visible' }}
     >
@@ -324,40 +373,68 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
         );
       })}
 
-      {/* ── Naval bases ── */}
+      {/* ── Naval vessels (carriers, destroyers, frigates) ── */}
       {isRunning && leaders.map(leader=>{
-        const bases=NAVAL_BASES[leader.id];
-        if(!bases) return null;
+        const vessels=NAVAL_VESSELS[leader.id];
+        if(!vessels) return null;
         const lc=leader.color||tc;
-        return bases.map((b,i)=>{
-          const [bx,by]=px(b[0],b[1]);
+        return vessels.map(([lng,lat,shipName,shipType],i)=>{
+          const [bx,by]=px(lng,lat);
+          const sym=shipType==='carrier'?'⬟':shipType==='destroyer'?'▶':'◆';
+          const r=shipType==='carrier'?7:shipType==='destroyer'?5.5:4.5;
+          const label=`${LEADER_NAMES[leader.id]||leader.id.toUpperCase()} · ${shipName} · ${shipType.toUpperCase()}`;
           return(
-            <g key={`nav_${leader.id}_${i}`}>
-              <circle cx={bx} cy={by} r={3.5} fill={lc} opacity={0.65}/>
-              <text x={bx} y={by} textAnchor="middle" dominantBaseline="central" style={{fontSize:'5px',fill:'rgba(0,0,0,0.9)'}}>⚓</text>
+            <g key={`nav_${leader.id}_${i}`}
+              style={{cursor:'pointer',pointerEvents:'all'}}
+              onMouseEnter={e=>setHoveredVessel({label,x:bx,y:by})}
+              onMouseLeave={()=>setHoveredVessel(null)}>
+              {/* Sonar ping */}
+              <circle cx={bx} cy={by} r={r} fill="none" stroke={lc} strokeWidth={1} opacity={0}>
+                <animate attributeName="r" values={`${r};${r*3.5}`} dur="3s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.7;0" dur="3s" repeatCount="indefinite"/>
+              </circle>
+              {/* Hull */}
+              <circle cx={bx} cy={by} r={r} fill={lc} opacity={0.85} filter="url(#glow-sm)"/>
+              <circle cx={bx} cy={by} r={r*0.45} fill="white" opacity={0.9}/>
+              {/* Symbol */}
+              <text x={bx} y={by-r-3} textAnchor="middle" style={{
+                fontSize:'8px',fill:lc,fontFamily:'Share Tech Mono,monospace',fontWeight:'bold',
+                paintOrder:'stroke',stroke:'rgba(0,0,0,0.95)',strokeWidth:'3px',
+              }}>{sym}</text>
             </g>
           );
         });
       })}
 
-      {/* ── Submarine patrol positions ── */}
+      {/* ── Submarines ── */}
       {isRunning && leaders.map(leader=>{
-        const sub=SUB_PATROL[leader.id];
-        if(!sub) return null;
-        const [sx,sy]=px(sub[0],sub[1]);
+        const subs=NAMED_SUBS[leader.id];
+        if(!subs) return null;
         const lc=leader.color||tc;
-        return(
-          <g key={`sub_${leader.id}`}>
-            <circle cx={sx} cy={sy} r={0} fill="none" stroke={lc} strokeWidth={1} opacity={0.5}>
-              <animate attributeName="r" values="0;14" dur="4s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0.5;0" dur="4s" repeatCount="indefinite"/>
-            </circle>
-            <ellipse cx={sx} cy={sy} rx={7} ry={2.5} fill={lc} opacity={0.7}/>
-            <rect x={sx-1} y={sy-5} width={2} height={3} fill={lc} opacity={0.9}/>
-          </g>
-        );
+        return subs.map(([lng,lat,subName],i)=>{
+          const [sx,sy]=px(lng,lat);
+          const label=`${LEADER_NAMES[leader.id]||leader.id.toUpperCase()} · ${subName} · SUBMARINE`;
+          return(
+            <g key={`sub_${leader.id}_${i}`}
+              style={{cursor:'pointer',pointerEvents:'all'}}
+              onMouseEnter={()=>setHoveredVessel({label,x:sx,y:sy})}
+              onMouseLeave={()=>setHoveredVessel(null)}>
+              {/* Sonar ping */}
+              <circle cx={sx} cy={sy} r={0} fill="none" stroke={lc} strokeWidth={1} opacity={0.5}>
+                <animate attributeName="r" values="0;18" dur="4s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.6;0" dur="4s" repeatCount="indefinite"/>
+              </circle>
+              {/* Sub hull — elongated */}
+              <ellipse cx={sx} cy={sy} rx={9} ry={3.5} fill={lc} opacity={0.8} filter="url(#glow-sm)"/>
+              <ellipse cx={sx} cy={sy} rx={4} ry={1.5} fill="white" opacity={0.7}/>
+              {/* Conning tower */}
+              <rect x={sx-1.5} y={sy-7} width={3} height={4} rx={1} fill={lc} opacity={0.9}/>
+            </g>
+          );
+        });
       })}
     </svg>
+    </>
   );
 }
 
@@ -421,16 +498,16 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       zoomSnap: 0.5,
     });
 
-    // CartoDB Dark Matter — deep navy oceans, muted land, neon labels
+    // CartoDB Voyager — colorful terrain, vivid blue oceans, clear country borders
     L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
       { attribution: '© CARTO', maxZoom: 18, subdomains: 'abcd' }
     ).addTo(map);
 
-    // CartoDB dark labels (city names, borders) at reduced opacity for the tactical look
+    // Labels layer on top (city names, country borders)
     L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-      { attribution: '© CARTO', maxZoom: 18, opacity: 0.55, subdomains: 'abcd' }
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
+      { attribution: '© CARTO', maxZoom: 18, opacity: 0.8, subdomains: 'abcd' }
     ).addTo(map);
 
     const onMove = () => setMapVersion(v => v + 1);
@@ -634,9 +711,9 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         }
       `}</style>
 
-      {/* ── Base tint: deep navy over CartoDB dark tiles ── */}
+      {/* ── Light military tint — keeps colors vivid ── */}
       <div className="absolute inset-0 pointer-events-none" style={{
-        background:'rgba(0,4,18,0.38)',
+        background:'rgba(0,10,30,0.18)',
         zIndex:400,
         mixBlendMode:'multiply',
       }}/>
