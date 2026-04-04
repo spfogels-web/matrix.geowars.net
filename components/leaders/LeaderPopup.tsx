@@ -44,8 +44,8 @@ export default function LeaderPopup({ message }: Props) {
 
   const tc   = TONE_COLORS[current.tone] || '#00f5ff';
   const ec   = current.escalation >= 8 ? '#ff2d55' : current.escalation >= 5 ? '#ff6a00' : '#ffd700';
-  const leaderId = current.leaderName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z]/g, '');
-  const flagCode = FLAG_CODE[leaderId] || FLAG_CODE[current.leaderName.slice(0,3).toLowerCase()];
+  const leaderId = current.leaderId;
+  const flagCode = FLAG_CODE[leaderId];
 
   return (
     <div

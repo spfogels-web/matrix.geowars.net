@@ -102,7 +102,7 @@ export default function LeaderChat({ messages, leaders, isOpen, onClose }: Props
         {filtered.map((msg, i) => {
           const tc = TONE_COLORS[msg.tone] || '#00f5ff';
           const ec = msg.escalation >= 8 ? '#ff2d55' : msg.escalation >= 5 ? '#ff6a00' : '#00ff9d';
-          const leaderId = msg.leaderName.toLowerCase().replace(/[^a-z]/g,'');
+          const leaderId = msg.leaderId;
 
           return (
             <div key={msg.id} className="fade-in" style={{ animationDelay: `${Math.min(i,5)*0.03}s` }}>
