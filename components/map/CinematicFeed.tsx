@@ -16,115 +16,225 @@ type FeedType = 'satellite' | 'drone' | 'broadcast';
 const FEED_DURATION = 4500; // ms per feed clip
 const FEEDS: FeedType[] = ['satellite', 'drone', 'broadcast'];
 
-function SatelliteFeed({ color, targetLabel }: { color: string; targetLabel: string }) {
-  return (
-    <div className="w-full h-full relative overflow-hidden" style={{ background: '#000a06', fontFamily: 'Share Tech Mono, monospace' }}>
+function SatelliteFeed({ targetLabel }: { color: string; targetLabel: string }) {
+  // Fixed values so they don't change on re-render
+  const lat = '34.7192';
+  const lon = '36.4842';
+  const orbit = '247';
+  const alt = 'KH-12 · ALT 423km · RES 0.15m/px';
 
-      {/* Terrain grid — simulated satellite terrain */}
+  return (
+    <div className="w-full h-full relative overflow-hidden" style={{ background: '#010a04', fontFamily: 'Share Tech Mono, monospace' }}>
+
+      {/* Full terrain scene — richly detailed satellite view */}
       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid slice">
-        {/* Grid */}
         <defs>
-          <pattern id="satgrid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,255,80,0.12)" strokeWidth="0.5"/>
-          </pattern>
-          <radialGradient id="terrainGrad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="rgba(0,40,10,0.8)"/>
-            <stop offset="100%" stopColor="rgba(0,10,4,0.95)"/>
+          <radialGradient id="sg1" cx="50%" cy="50%" r="60%">
+            <stop offset="0%" stopColor="#0a1a08"/>
+            <stop offset="100%" stopColor="#020a02"/>
           </radialGradient>
-          <filter id="noise">
-            <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
-            <feColorMatrix type="saturate" values="0"/>
-            <feBlend in="SourceGraphic" mode="overlay" result="blend"/>
-            <feComposite in="blend" in2="SourceGraphic"/>
-          </filter>
+          <radialGradient id="craterGrad" cx="50%" cy="40%" r="50%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9"/>
+            <stop offset="15%" stopColor="#ff8800" stopOpacity="0.8"/>
+            <stop offset="40%" stopColor="#cc3300" stopOpacity="0.5"/>
+            <stop offset="100%" stopColor="transparent" stopOpacity="0"/>
+          </radialGradient>
+          <radialGradient id="fireGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#ffff00" stopOpacity="0.95"/>
+            <stop offset="30%" stopColor="#ff6600" stopOpacity="0.8"/>
+            <stop offset="70%" stopColor="#cc2200" stopOpacity="0.5"/>
+            <stop offset="100%" stopColor="transparent" stopOpacity="0"/>
+          </radialGradient>
+          <filter id="blur2"><feGaussianBlur stdDeviation="2"/></filter>
+          <filter id="blur5"><feGaussianBlur stdDeviation="5"/></filter>
+          <filter id="blur8"><feGaussianBlur stdDeviation="8"/></filter>
         </defs>
-        <rect width="800" height="500" fill="url(#terrainGrad)"/>
-        <rect width="800" height="500" fill="url(#satgrid)"/>
-        {/* Terrain blobs — simulated landmass */}
-        {[
-          [320,180,140,80],[200,260,100,60],[450,220,120,70],
-          [380,320,90,50],[520,280,110,65],[250,350,80,45],
-        ].map(([x,y,rx,ry],i)=>(
-          <ellipse key={i} cx={x} cy={y} rx={rx} ry={ry} fill="rgba(0,60,20,0.35)" stroke="rgba(0,255,80,0.08)" strokeWidth="0.5"/>
+
+        {/* Base terrain */}
+        <rect width="800" height="500" fill="url(#sg1)"/>
+
+        {/* Terrain patches — vegetation, farmland, scrub */}
+        {[[60,40,180,90],[280,30,140,70],[500,20,160,80],[650,60,120,60],
+          [40,160,100,80],[600,140,130,70],[700,200,90,60],
+          [50,320,150,80],[680,300,100,70],[200,420,180,60],[550,380,140,70]
+        ].map(([x,y,w,h],i)=>(
+          <rect key={`t${i}`} x={x} y={y} width={w} height={h}
+            fill={i%3===0?'rgba(20,55,10,0.6)':i%3===1?'rgba(35,70,15,0.5)':'rgba(55,80,20,0.4)'}
+            rx="4"/>
         ))}
-        {/* Impact zone highlight */}
-        <circle cx="400" cy="250" r="18" fill="rgba(255,60,0,0.3)" stroke="#ff3c00" strokeWidth="1">
-          <animate attributeName="r" values="18;28;18" dur="1.2s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.8;0.4;0.8" dur="1.2s" repeatCount="indefinite"/>
+
+        {/* Road network */}
+        {[
+          'M 0,210 L 800,195','M 0,290 L 800,310',           // horizontal highways
+          'M 310,0 L 325,500','M 490,0 L 475,500',           // vertical roads
+          'M 0,150 L 310,210','M 490,210 L 800,180',         // diagonal feeders
+          'M 325,290 L 490,290',                              // cross street
+          'M 250,195 L 250,290','M 560,195 L 560,310',       // side streets
+          'M 325,195 L 490,195','M 325,310 L 490,310',       // block edges
+        ].map((d,i)=>(
+          <path key={`r${i}`} d={d} stroke="rgba(180,160,80,0.45)" strokeWidth={i<4?2.5:1.2} fill="none"/>
+        ))}
+
+        {/* Urban block grid (city area surrounding impact) */}
+        {[
+          [330,200,30,20],[365,200,30,20],[400,200,28,20],
+          [330,225,30,18],[365,225,30,18],[400,225,28,18],
+          [330,248,30,16],[365,248,30,16],
+          [432,200,25,20],[460,200,25,20],
+          [432,225,25,18],[460,225,25,18],
+          [330,270,30,15],[365,270,25,15],[432,270,25,15],
+        ].map(([x,y,w,h],i)=>(
+          <rect key={`b${i}`} x={x} y={y} width={w} height={h}
+            fill="rgba(80,90,70,0.65)" stroke="rgba(120,130,90,0.3)" strokeWidth="0.5"/>
+        ))}
+
+        {/* River / water body */}
+        <path d="M 0,380 C 150,370 200,390 300,375 S 450,355 550,365 S 700,380 800,370"
+          fill="none" stroke="rgba(30,80,160,0.7)" strokeWidth="8"/>
+        <path d="M 0,383 C 150,373 200,393 300,378 S 450,358 550,368 S 700,383 800,373"
+          fill="none" stroke="rgba(50,120,200,0.3)" strokeWidth="3"/>
+
+        {/* Airport / airfield tarmac */}
+        <rect x="580" y="60" width="180" height="80" rx="2" fill="rgba(60,60,50,0.7)" stroke="rgba(150,150,100,0.3)" strokeWidth="1"/>
+        <line x1="590" y1="100" x2="750" y2="100" stroke="rgba(255,255,200,0.4)" strokeWidth="1.5" strokeDasharray="8,6"/>
+
+        {/* ── IMPACT ZONE (center) ── */}
+        {/* Blast radius outer glow */}
+        <circle cx="400" cy="248" r="80" fill="url(#craterGrad)" filter="url(#blur8)" opacity="0.7">
+          <animate attributeName="opacity" values="0.7;0.9;0.7" dur="1.8s" repeatCount="indefinite"/>
         </circle>
-        <circle cx="400" cy="250" r="6" fill="#ff3c00" opacity="0.9"/>
-        {/* Damage scatter */}
-        {[[390,240],[412,258],[382,262],[418,242],[395,270]].map(([cx,cy],i)=>(
-          <circle key={i} cx={cx} cy={cy} r="2.5" fill="#ff6a00" opacity={0.5+i*0.08}/>
+
+        {/* Destroyed buildings (dark rubble patches) */}
+        {[[375,225,18,12],[398,218,16,14],[362,240,20,10],[388,240,22,12],[412,236,14,10],
+          [370,253,16,8],[395,255,18,10],[416,248,12,12]].map(([x,y,w,h],i)=>(
+          <rect key={`rb${i}`} x={x} y={y} width={w} height={h}
+            fill="rgba(20,10,5,0.85)" stroke="rgba(80,40,0,0.4)" strokeWidth="0.5" rx="1"/>
+        ))}
+
+        {/* Crater */}
+        <circle cx="400" cy="248" r="28" fill="rgba(5,2,0,0.95)" stroke="rgba(100,50,0,0.6)" strokeWidth="1.5"/>
+        <circle cx="400" cy="248" r="18" fill="rgba(0,0,0,0.98)"/>
+
+        {/* Fire — center bloom */}
+        <circle cx="400" cy="248" r="22" fill="url(#fireGrad)" filter="url(#blur2)">
+          <animate attributeName="r" values="22;30;22;18;25;22" dur="0.8s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.9;0.6;0.95;0.7;0.85;0.9" dur="0.8s" repeatCount="indefinite"/>
+        </circle>
+
+        {/* Secondary fires */}
+        {[[372,228,8],[418,238,6],[382,262,7],[414,258,5],[365,252,6],[395,232,7]].map(([cx,cy,r],i)=>(
+          <circle key={`f${i}`} cx={cx} cy={cy} r={r} fill="url(#fireGrad)" filter="url(#blur2)" opacity="0.75">
+            <animate attributeName="r" values={`${r};${r+3};${r-1};${r+2};${r}`} dur={`${0.6+i*0.13}s`} repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="0.75;0.5;0.9;0.6;0.75" dur={`${0.6+i*0.13}s`} repeatCount="indefinite"/>
+          </circle>
+        ))}
+
+        {/* Smoke plumes — rising from crater and secondaries */}
+        {[[400,248],[372,228],[418,238],[382,262]].map(([sx,sy],pi)=>(
+          [...Array(5)].map((_,i)=>(
+            <ellipse key={`sm${pi}_${i}`}
+              cx={sx+(i-2)*4} cy={sy-i*18-10} rx={8+i*5} ry={5+i*3}
+              fill={`rgba(${40+i*8},${40+i*8},${40+i*8},${0.55-i*0.09})`}
+              filter="url(#blur2)"/>
+          ))
+        ))}
+
+        {/* Debris scatter */}
+        {[[350,205,3],[425,215,2],[345,262,2.5],[432,268,2],[360,278,3],
+          [418,278,2],[442,242,2.5],[356,232,2],[422,256,3],[376,215,2]].map(([cx,cy,r],i)=>(
+          <circle key={`d${i}`} cx={cx} cy={cy} r={r}
+            fill={i%2===0?'rgba(200,100,0,0.7)':'rgba(80,60,20,0.6)'}/>
+        ))}
+
+        {/* Impact pulse ring */}
+        <circle cx="400" cy="248" r="35" fill="none" stroke="rgba(255,120,0,0.7)" strokeWidth="1.5">
+          <animate attributeName="r" values="35;75;35" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.7;0;0.7" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="400" cy="248" r="55" fill="none" stroke="rgba(255,60,0,0.4)" strokeWidth="1">
+          <animate attributeName="r" values="55;110;55" dur="2s" begin="0.5s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.4;0;0.4" dur="2s" begin="0.5s" repeatCount="indefinite"/>
+        </circle>
+
+        {/* Targeting reticle overlay */}
+        <g opacity="0.9">
+          <circle cx="400" cy="248" r="48" fill="none" stroke="rgba(0,255,80,0.6)" strokeWidth="0.8" strokeDasharray="6,4"/>
+          <line x1="370" y1="248" x2="352" y2="248" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
+          <line x1="430" y1="248" x2="448" y2="248" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
+          <line x1="400" y1="218" x2="400" y2="200" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
+          <line x1="400" y1="278" x2="400" y2="296" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
+          <text x="454" y="245" fill="rgba(0,255,80,0.9)" fontSize="8" fontFamily="Share Tech Mono">◉ IMPACT</text>
+        </g>
+
+        {/* Measurement grid overlay */}
+        {[...Array(9)].map((_,i)=>(
+          <line key={`gi${i}`} x1={200+i*50} y1="100" x2={200+i*50} y2="400"
+            stroke="rgba(0,255,80,0.04)" strokeWidth="0.5"/>
+        ))}
+        {[...Array(7)].map((_,i)=>(
+          <line key={`gh${i}`} x1="150" y1={120+i*45} x2="650" y2={120+i*45}
+            stroke="rgba(0,255,80,0.04)" strokeWidth="0.5"/>
         ))}
       </svg>
 
-      {/* Scan line sweep */}
+      {/* Horizontal scan line sweep */}
       <div className="absolute left-0 right-0 pointer-events-none" style={{
-        height: '3px',
-        background: 'linear-gradient(90deg,transparent,rgba(0,255,80,0.6),transparent)',
-        animation: 'sat-scan 2s linear infinite',
+        height: '2px',
+        background: 'linear-gradient(90deg,transparent,rgba(0,255,80,0.5),transparent)',
+        animation: 'sat-scan 3s linear infinite',
         zIndex: 3,
       }}/>
 
-      {/* Grain overlay */}
+      {/* CRT scan-line texture */}
       <div className="absolute inset-0 pointer-events-none" style={{
-        backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'0.04\'/%3E%3C/svg%3E")',
+        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)',
         zIndex: 4,
-        opacity: 0.4,
       }}/>
 
       {/* Corner brackets */}
-      {[{t:12,l:12,br:'8px 0 0 0'},{t:12,r:12,br:'0 8px 0 0'},{b:12,l:12,br:'0 0 0 8px'},{b:12,r:12,br:'0 0 8px 0'}].map((c,i)=>(
+      {[{t:10,l:10,br:'8px 0 0 0'},{t:10,r:10,br:'0 8px 0 0'},{b:44,l:10,br:'0 0 0 8px'},{b:44,r:10,br:'0 0 8px 0'}].map((c,i)=>(
         <div key={i} className="absolute" style={{
-          width:28,height:28,top:c.t,bottom:c.b,left:c.l,right:c.r,
-          border:`2px solid rgba(0,255,80,0.7)`,borderRadius:c.br,zIndex:5,
+          width:32,height:32,top:c.t,bottom:c.b,left:c.l,right:c.r,
+          border:`2px solid rgba(0,255,80,0.75)`,borderRadius:c.br,zIndex:5,
         }}/>
       ))}
 
-      {/* Crosshair */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{zIndex:5}}>
-        <svg width="80" height="80" viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r="16" fill="none" stroke="#ff3c00" strokeWidth="1" opacity="0.9">
-            <animate attributeName="r" values="16;22;16" dur="1s" repeatCount="indefinite"/>
-            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="1s" repeatCount="indefinite"/>
-          </circle>
-          <circle cx="40" cy="40" r="2" fill="#ff3c00"/>
-          <line x1="0" y1="40" x2="24" y2="40" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
-          <line x1="56" y1="40" x2="80" y2="40" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
-          <line x1="40" y1="0" x2="40" y2="24" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
-          <line x1="40" y1="56" x2="40" y2="80" stroke="rgba(0,255,80,0.8)" strokeWidth="1"/>
-        </svg>
+      {/* HUD — top left */}
+      <div className="absolute z-10" style={{top:14,left:50,color:'rgba(0,255,80,0.95)',fontSize:'10px',lineHeight:'1.9',letterSpacing:'0.12em'}}>
+        <div>{alt}</div>
+        <div>ORBIT INCLINATION: {orbit}°</div>
+        <div style={{color:'rgba(0,255,80,0.55)'}}>SENSOR: THERMAL+OPTICAL FUSION</div>
       </div>
 
-      {/* HUD overlays */}
-      <div className="absolute top-4 left-12 z-10" style={{color:'rgba(0,255,80,0.9)',fontSize:'10px',letterSpacing:'0.15em'}}>
-        <div>ALT: 423km</div>
-        <div>RES: 0.3m/px</div>
-        <div style={{color:'rgba(0,255,80,0.5)',marginTop:'2px'}}>ORBIT: {Math.floor(Math.random()*90+200)}°</div>
-      </div>
-      <div className="absolute top-4 right-12 z-10 text-right" style={{color:'rgba(0,255,80,0.9)',fontSize:'10px',letterSpacing:'0.15em'}}>
-        <div>LAT: {(Math.random()*60-30).toFixed(4)}°N</div>
-        <div>LON: {(Math.random()*360-180).toFixed(4)}°E</div>
-        <div style={{color:'rgba(0,255,80,0.5)',marginTop:'2px'}}>SAT-7 CLASSIFIED</div>
+      {/* HUD — top right */}
+      <div className="absolute z-10 text-right" style={{top:14,right:50,color:'rgba(0,255,80,0.95)',fontSize:'10px',lineHeight:'1.9',letterSpacing:'0.12em'}}>
+        <div>LAT: {lat}°N</div>
+        <div>LON: {lon}°E</div>
+        <div style={{color:'rgba(255,80,0,0.9)',fontWeight:'bold'}}>⬤ IMPACT CONFIRMED</div>
       </div>
 
       {/* Target label */}
-      <div className="absolute z-10" style={{bottom:70,left:'50%',transform:'translateX(-50%)',color:'#ff3c00',fontSize:'11px',letterSpacing:'0.2em',textAlign:'center',textShadow:'0 0 10px #ff3c00'}}>
-        TARGET: {targetLabel.toUpperCase()}
+      <div className="absolute z-10" style={{
+        bottom:50, left:'50%', transform:'translateX(-50%)',
+        color:'#ff4400', fontSize:'12px', letterSpacing:'0.25em',
+        textAlign:'center', textShadow:'0 0 14px #ff4400', fontWeight:'bold',
+      }}>
+        ◉ TARGET: {targetLabel.toUpperCase()} · STRIKE CONFIRMED
       </div>
 
       {/* Bottom bar */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2" style={{background:'rgba(0,0,0,0.85)',borderTop:'1px solid rgba(0,255,80,0.3)'}}>
-        <span style={{color:'rgba(0,255,80,0.7)',fontSize:'9px',letterSpacing:'0.2em'}}>SATFEED · CLASSIFIED · SIMULATION ONLY</span>
-        <span className="status-blink" style={{color:'#ff3c00',fontSize:'9px',letterSpacing:'0.2em',fontWeight:'bold'}}>● LIVE</span>
+      <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2" style={{
+        background:'rgba(0,0,0,0.9)', borderTop:'1px solid rgba(0,255,80,0.35)',
+      }}>
+        <span style={{color:'rgba(0,255,80,0.75)',fontSize:'9px',letterSpacing:'0.18em'}}>NRO · SAT-7 · CLASSIFICATION: TOP SECRET//SCI · SIMULATION ONLY</span>
+        <span className="status-blink" style={{color:'#ff3c00',fontSize:'10px',letterSpacing:'0.2em',fontWeight:'bold'}}>● LIVE</span>
         <span style={{color:'rgba(0,255,80,0.5)',fontSize:'9px'}}>{new Date().toUTCString().slice(0,25)} UTC</span>
       </div>
     </div>
   );
 }
 
-function DroneFeed({ color, eventTitle }: { color: string; eventTitle: string }) {
+function DroneFeed({ eventTitle }: { color: string; eventTitle: string }) {
   return (
     <div className="w-full h-full relative overflow-hidden" style={{background:'#04080a',fontFamily:'Share Tech Mono, monospace'}}>
 
@@ -325,7 +435,7 @@ function BroadcastFeed({ color, eventTitle, targetLabel, impact }: { color: stri
   );
 }
 
-export default function CinematicFeed({ active, color, eventTitle, targetLabel, eventType, impact, onComplete }: Props) {
+export default function CinematicFeed({ active, color, eventTitle, targetLabel, impact, onComplete }: Props) {
   const [feedIndex, setFeedIndex] = useState(0);
   const [visible, setVisible] = useState(false);
   const [fading, setFading] = useState(false);

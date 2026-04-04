@@ -221,6 +221,10 @@ function travelAngle(from:[number,number],to:[number,number]){
   const dx=to[0]-from[0], dy=-(to[1]-from[1]);
   return Math.atan2(dy,dx)*180/Math.PI;
 }
+// Project real-world [lng, lat] to SVG viewBox 0-100 using equirectangular
+function lngLatToVB(lng:number, lat:number):[number,number]{
+  return [(lng+180)/360*100, (90-lat)/180*100];
+}
 
 function getUnitConfig(ev: GeoEvent): { kind: UnitKind; symbol: string; speed: number; soundType: string } {
   const t = (ev.title+ev.description).toLowerCase();
@@ -296,11 +300,16 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
   const [units, setUnits]           = useState<MapUnit[]>([]);
   const [hoveredZone, setHoveredZone]     = useState<string|null>(null);
   const [hoveredUnit, setHoveredUnit] = useState<{id:string; label:string; desc:string; x:number; y:number}|null>(null);
-  type CinPhase = 'alert'|'zoom'|'satellite'|'missile'|'impact'|'shockwave'|'damage'|'report'|'done';
+  type CinPhase = 'alert'|'zoom'|'missile'|'impact'|'shockwave'|'report'|'done';
   const [cinematic, setCinematic] = useState<{
     active:boolean; phase:CinPhase; color:string; label:string;
-    originDir:[number,number]; targetLabel:string; eventType:string; impact:number;
-  }>({active:false,phase:'done',color:'#ff2d55',label:'',originDir:[0,1],targetLabel:'',eventType:'military',impact:8});
+    originDir:[number,number]; targetLabel:string; originLabel:string;
+    eventType:string; impact:number;
+    ox:number; oy:number; tx:number; ty:number; // SVG viewBox 0-100
+    casualties:string;
+  }>({active:false,phase:'done',color:'#ff2d55',label:'',originDir:[0,1],
+    targetLabel:'',originLabel:'',eventType:'military',impact:8,
+    ox:20,oy:45,tx:75,ty:40,casualties:''});
   const cinematicRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [hoveredCountry, setHoveredCountry] = useState<string|null>(null);
   const [mousePos, setMousePos]     = useState<{x:number;y:number}>({x:0,y:0});
@@ -339,23 +348,42 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
     if(isMajorStrike){
       cinematicRef.current.forEach(t=>clearTimeout(t));
       cinematicRef.current=[];
-      const label = ev.title.length>42 ? ev.title.slice(0,42)+'…' : ev.title;
+      const label = ev.title.length>48 ? ev.title.slice(0,48)+'…' : ev.title;
       const originLead = ev.affectedLeaders[0];
-      const targetLead = ev.affectedLeaders[1] || ev.affectedLeaders[0];
+      // Target = second affected leader if different from origin; else use region
+      const targetLead = (ev.affectedLeaders[1] && ev.affectedLeaders[1]!==originLead)
+        ? ev.affectedLeaders[1] : ev.affectedLeaders[0];
       const originC = LEADER_COORDS[originLead] || REGION_COORDS[ev.region] || [0,20] as [number,number];
-      const targetC = LEADER_COORDS[targetLead] || REGION_COORDS[ev.region] || [0,20] as [number,number];
-      // Direction vector from origin to target (normalized, for arrow display)
+      // If target === origin, nudge toward region center so arc is visible
+      const rawTargetC = (targetLead !== originLead)
+        ? (LEADER_COORDS[targetLead] || REGION_COORDS[ev.region] || [0,20] as [number,number])
+        : (REGION_COORDS[ev.region] || [0,20] as [number,number]);
+      const targetC = rawTargetC as [number,number];
       const dx = targetC[0]-originC[0], dy = targetC[1]-originC[1];
       const dist = Math.sqrt(dx*dx+dy*dy)||1;
       const originDir:[number,number] = [dx/dist, dy/dist];
-      setCinematic({active:true,phase:'alert',color,label,originDir,targetLabel:LEADER_NAMES[targetLead]||ev.region,eventType:ev.type,impact:ev.impact});
-      // Paced sequence — each phase has clear breathing room
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'zoom'})),1400));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'missile'})),3000));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),5200));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),5800));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),7500));
-      cinematicRef.current.push(setTimeout(()=>{setCinematic(p=>({...p,active:false,phase:'done'}));setFeedActive(true);},13000));
+      // Project to SVG viewBox 0-100 for missile arc rendering
+      const [ox,oy] = lngLatToVB(originC[0], originC[1]);
+      const [tx,ty] = lngLatToVB(targetC[0], targetC[1]);
+      const casualties = ev.impact>=9
+        ? 'Mass casualties confirmed — emergency response mobilized, hospitals overwhelmed'
+        : ev.impact>=7
+        ? 'Multiple casualties reported — rescue operations underway, hospitals on alert'
+        : 'Casualties reported — damage assessment in progress';
+      setCinematic({
+        active:true,phase:'alert',color,label,originDir,
+        targetLabel:LEADER_NAMES[targetLead]||ev.region,
+        originLabel:LEADER_NAMES[originLead]||ev.region,
+        eventType:ev.type,impact:ev.impact,
+        ox,oy,tx,ty,casualties,
+      });
+      // Slower, orchestrated phase sequence — each phase has breathing room
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'zoom'})),2200));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'missile'})),4800));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),8000));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),9200));
+      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),11500));
+      cinematicRef.current.push(setTimeout(()=>{setCinematic(p=>({...p,active:false,phase:'done'}));setFeedActive(true);},17000));
     }
 
     // Flash
@@ -391,18 +419,24 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
       setUnits([...unitsRef.current]);
     }
 
-    // Arcs
-    const newArcs:Arc[]=ev.affectedLeaders.slice(0,5).map((lid,i)=>({
-      id:`arc_${Date.now()}_${i}`,
-      from:origin,
-      to:LEADER_COORDS[lid]||LEADER_COORDS['usa'],
-      color,
-    }));
+    // Arcs — from origin TO each other affected leader (skip self)
+    const arcTargets = ev.affectedLeaders.slice(1,5).filter(lid=>lid!==originLid);
+    const newArcs:Arc[]=arcTargets.length>0
+      ? arcTargets.map((lid,i)=>({
+          id:`arc_${Date.now()}_${i}`,
+          from:origin,
+          to:LEADER_COORDS[lid]||REGION_COORDS[ev.region]||origin,
+          color,
+        }))
+      : [{id:`arc_${Date.now()}_0`,from:origin,to:REGION_COORDS[ev.region]||[0,20] as [number,number],color}];
     setArcs(newArcs);
-    setTimeout(()=>setArcs([]),5000);
+    setTimeout(()=>setArcs([]),6000);
 
-    // Auto-pan
-    const tgtC:[number,number]=[...origin] as [number,number];
+    // Auto-pan — go to TARGET location (where the strike lands), not origin
+    const panTarget = ev.affectedLeaders[1]
+      ? (LEADER_COORDS[ev.affectedLeaders[1]] || REGION_COORDS[ev.region] || origin)
+      : (REGION_COORDS[ev.region] || origin);
+    const tgtC:[number,number]=[panTarget[0], panTarget[1]];
     const tgtZ=ev.impact>=8?3.8:ev.impact>=5?3.0:2.3;
     if(panAnimRef.current) clearInterval(panAnimRef.current);
     const sC:[number,number]=[...centerRef.current] as [number,number];
@@ -422,7 +456,7 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
             setCenter(bc);setZoom(lerp(hZ,2.2,bt));centerRef.current=bc;zoomRef.current=lerp(hZ,2.2,bt);
             if(s2>=40) clearInterval(panAnimRef.current!);
           },50);
-        },4500);
+        },10000);
       }
     },50);
     return () => { cinematicRef.current.forEach(t=>clearTimeout(t)); };
@@ -562,7 +596,7 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
           )}
 
           {/* Persistent dark vignette during active phases */}
-          {(cinematic.phase==='zoom'||cinematic.phase==='satellite'||cinematic.phase==='missile'||cinematic.phase==='impact'||cinematic.phase==='shockwave'||cinematic.phase==='damage'||cinematic.phase==='report')&&(
+          {(cinematic.phase==='zoom'||cinematic.phase==='missile'||cinematic.phase==='impact'||cinematic.phase==='shockwave'||cinematic.phase==='report')&&(
             <div className="absolute inset-0" style={{
               background:'radial-gradient(ellipse at center,transparent 25%,rgba(0,0,0,0.72) 100%)',
               transition:'all 1s ease',
@@ -570,8 +604,8 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
             }}/>
           )}
 
-          {/* Phase: SATELLITE — scan line effect + grid overlay */}
-          {(cinematic.phase==='satellite'||cinematic.phase==='missile')&&(
+          {/* Phase: ZOOM+MISSILE — scan line + grid + corner brackets */}
+          {(cinematic.phase==='zoom'||cinematic.phase==='missile')&&(
             <>
               {/* Satellite scan line */}
               <div className="absolute left-0 right-0 sat-scan" style={{
@@ -604,49 +638,64 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
             </>
           )}
 
-          {/* Phase: MISSILE — SVG arc trajectory */}
-          {cinematic.phase==='missile'&&(
-            <svg className="absolute inset-0 w-full h-full" style={{zIndex:29}} viewBox="0 0 100 100" preserveAspectRatio="none">
-              {/* Trajectory arc — quadratic bezier */}
-              <path
-                d={`M 15,85 Q 50,10 85,50`}
-                fill="none"
-                stroke={cinematic.color}
-                strokeWidth="0.4"
-                strokeDasharray="1200"
-                strokeDashoffset="1200"
-                strokeLinecap="round"
-                opacity="0.9"
-                className="arc-draw"
-                style={{filter:`drop-shadow(0 0 3px ${cinematic.color})`}}
-              />
-              {/* Missile head dot traveling along arc */}
-              <circle r="1.2" fill={cinematic.color} opacity="0.95" style={{filter:`drop-shadow(0 0 4px ${cinematic.color})`}}>
-                <animateMotion dur="1.4s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1">
-                  <mpath xlinkHref="#missileArc"/>
-                </animateMotion>
-              </circle>
-              <path id="missileArc" d="M 15,85 Q 50,10 85,50" fill="none"/>
-              {/* Origin point */}
-              <circle cx="15" cy="85" r="1.5" fill={cinematic.color} opacity="0.6"/>
-              {/* Target reticle */}
-              <g opacity="0.85">
-                <circle cx="85" cy="50" r="4" fill="none" stroke={cinematic.color} strokeWidth="0.3">
-                  <animate attributeName="r" values="4;7;4" dur="0.8s" repeatCount="indefinite"/>
-                  <animate attributeName="opacity" values="0.85;0.3;0.85" dur="0.8s" repeatCount="indefinite"/>
+          {/* Phase: MISSILE — SVG arc trajectory using real geographic coords */}
+          {cinematic.phase==='missile'&&(()=>{
+            // Bezier control point: arc bows upward proportional to distance
+            const midX=(cinematic.ox+cinematic.tx)/2;
+            const d=Math.sqrt((cinematic.tx-cinematic.ox)**2+(cinematic.ty-cinematic.oy)**2);
+            const arcH=Math.max(14,d*0.5);
+            const midY=(cinematic.oy+cinematic.ty)/2-arcH;
+            const arcD=`M ${cinematic.ox.toFixed(1)},${cinematic.oy.toFixed(1)} Q ${midX.toFixed(1)},${midY.toFixed(1)} ${cinematic.tx.toFixed(1)},${cinematic.ty.toFixed(1)}`;
+            // Label offset — place label above the target, shifted slightly to avoid edge
+            const lx=Math.min(96,Math.max(4,cinematic.tx+1.5));
+            const ly=Math.max(4,cinematic.ty-3);
+            return(
+              <svg className="absolute inset-0 w-full h-full" style={{zIndex:29}} viewBox="0 0 100 100" preserveAspectRatio="none">
+                {/* Trajectory arc */}
+                <path d={arcD} fill="none" stroke={cinematic.color} strokeWidth="0.45"
+                  strokeDasharray="300" strokeDashoffset="300" strokeLinecap="round" opacity="0.95"
+                  className="arc-draw" style={{filter:`drop-shadow(0 0 3px ${cinematic.color})`}}/>
+                {/* Hidden arc for animateMotion */}
+                <path id="missileArc2" d={arcD} fill="none"/>
+                {/* Missile head traveling along arc */}
+                <circle r="1.3" fill={cinematic.color} opacity="0.95" style={{filter:`drop-shadow(0 0 5px ${cinematic.color})`}}>
+                  <animateMotion dur="2.8s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.6 1">
+                    <mpath xlinkHref="#missileArc2"/>
+                  </animateMotion>
                 </circle>
-                <circle cx="85" cy="50" r="1.2" fill={cinematic.color}/>
-                <line x1="82" y1="50" x2="78" y2="50" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
-                <line x1="88" y1="50" x2="92" y2="50" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
-                <line x1="85" y1="47" x2="85" y2="43" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
-                <line x1="85" y1="53" x2="85" y2="57" stroke={cinematic.color} strokeWidth="0.3" opacity="0.7"/>
-              </g>
-              {/* Target label */}
-              <text x="87" y="48" fill={cinematic.color} fontSize="2.2" fontFamily="Share Tech Mono" opacity="0.8">
-                {cinematic.targetLabel}
-              </text>
-            </svg>
-          )}
+                {/* Trail glow */}
+                <circle r="0.6" fill="white" opacity="0.6">
+                  <animateMotion dur="2.8s" fill="freeze" begin="0.05s" calcMode="spline" keySplines="0.4 0 0.6 1">
+                    <mpath xlinkHref="#missileArc2"/>
+                  </animateMotion>
+                </circle>
+                {/* Origin dot */}
+                <circle cx={cinematic.ox} cy={cinematic.oy} r="1.8" fill={cinematic.color} opacity="0.7"/>
+                <circle cx={cinematic.ox} cy={cinematic.oy} r="3.5" fill="none" stroke={cinematic.color} strokeWidth="0.3" opacity="0.4"/>
+                {/* Origin label */}
+                <text x={cinematic.ox+2} y={cinematic.oy-2} fill={cinematic.color} fontSize="2" fontFamily="Share Tech Mono" opacity="0.7">
+                  {cinematic.originLabel}
+                </text>
+                {/* Target reticle */}
+                <g opacity="0.9">
+                  <circle cx={cinematic.tx} cy={cinematic.ty} r="4" fill="none" stroke={cinematic.color} strokeWidth="0.4">
+                    <animate attributeName="r" values="4;8;4" dur="0.9s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" values="0.9;0.3;0.9" dur="0.9s" repeatCount="indefinite"/>
+                  </circle>
+                  <circle cx={cinematic.tx} cy={cinematic.ty} r="1.4" fill={cinematic.color}/>
+                  <line x1={cinematic.tx-3} y1={cinematic.ty} x2={cinematic.tx-7} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="0.35" opacity="0.8"/>
+                  <line x1={cinematic.tx+3} y1={cinematic.ty} x2={cinematic.tx+7} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="0.35" opacity="0.8"/>
+                  <line x1={cinematic.tx} y1={cinematic.ty-3} x2={cinematic.tx} y2={cinematic.ty-7} stroke={cinematic.color} strokeWidth="0.35" opacity="0.8"/>
+                  <line x1={cinematic.tx} y1={cinematic.ty+3} x2={cinematic.tx} y2={cinematic.ty+7} stroke={cinematic.color} strokeWidth="0.35" opacity="0.8"/>
+                </g>
+                {/* Target label */}
+                <text x={lx} y={ly} fill={cinematic.color} fontSize="2.4" fontFamily="Share Tech Mono" opacity="0.85"
+                  textAnchor={cinematic.tx>70?'end':'start'}>
+                  ◉ {cinematic.targetLabel}
+                </text>
+              </svg>
+            );
+          })()}
 
           {/* Phase: IMPACT — white core flash + radial burst */}
           {cinematic.phase==='impact'&&(
@@ -666,7 +715,7 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
           )}
 
           {/* Phase: SHOCKWAVE — expanding rings */}
-          {(cinematic.phase==='shockwave'||cinematic.phase==='damage')&&(
+          {cinematic.phase==='shockwave'&&(
             <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:27}}>
               {[0,1,2,3].map(i=>(
                 <div key={i} className="absolute rounded-full" style={{
@@ -687,55 +736,50 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
             </div>
           )}
 
-          {/* Phase: DAMAGE — red zone overlay */}
-          {cinematic.phase==='damage'&&(
-            <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:26}}>
-              <div className="damage-pulse" style={{
-                width:'280px',height:'180px',
-                borderRadius:'50%',
-                background:`radial-gradient(ellipse,${cinematic.color}35 0%,${cinematic.color}15 45%,transparent 70%)`,
-                border:`1px solid ${cinematic.color}50`,
-              }}/>
-            </div>
-          )}
-
-          {/* Phase: REPORT — intel summary panel */}
+          {/* Phase: REPORT — intel summary panel with casualties */}
           {cinematic.phase==='report'&&(
             <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:29}}>
-              <div className="font-mono rounded-2xl px-8 py-6 fade-in" style={{
-                background:'rgba(0,0,0,0.94)',
-                border:`1px solid ${cinematic.color}60`,
-                boxShadow:`0 0 50px ${cinematic.color}25,0 0 100px rgba(0,0,0,0.8)`,
-                backdropFilter:'blur(16px)',
-                maxWidth:'460px',
-                width:'90%',
+              <div className="font-mono rounded-2xl px-8 py-7 fade-in" style={{
+                background:'rgba(0,0,0,0.96)',
+                border:`1px solid ${cinematic.color}70`,
+                boxShadow:`0 0 60px ${cinematic.color}30,0 0 120px rgba(0,0,0,0.9)`,
+                backdropFilter:'blur(20px)',
+                maxWidth:'520px',
+                width:'92%',
               }}>
-                <div className="font-orbitron font-bold mb-4" style={{color:cinematic.color,fontSize:'13px',letterSpacing:'0.25em',textAlign:'center'}}>
-                  ■ STRIKE ASSESSMENT REPORT
+                <div className="font-orbitron font-bold mb-1 text-center" style={{color:cinematic.color,fontSize:'11px',letterSpacing:'0.3em'}}>
+                  ■ STRIKE ASSESSMENT REPORT ■
                 </div>
-                <div style={{borderTop:`1px solid ${cinematic.color}30`,paddingTop:'12px'}}>
+                <div className="text-center mb-4" style={{color:`${cinematic.color}60`,fontSize:'9px',letterSpacing:'0.2em'}}>
+                  {new Date().toUTCString().slice(0,25).toUpperCase()} UTC
+                </div>
+                <div style={{borderTop:`1px solid ${cinematic.color}30`,paddingTop:'14px'}}>
                   {[
-                    {l:'EVENT',v:cinematic.label},
-                    {l:'TYPE',v:cinematic.eventType.toUpperCase()},
-                    {l:'IMPACT LEVEL',v:`${cinematic.impact}/10 — ${cinematic.impact>=9?'CATASTROPHIC':cinematic.impact>=7?'SEVERE':'SIGNIFICANT'}`},
-                    {l:'TARGET ZONE',v:cinematic.targetLabel},
-                    {l:'STATUS',v:'IMPACT CONFIRMED · DAMAGE ASSESSMENT ONGOING'},
-                  ].map(({l,v})=>(
-                    <div key={l} className="flex gap-3 mb-2">
-                      <span style={{color:'rgba(255,255,255,0.35)',fontSize:'10px',width:'100px',flexShrink:0,letterSpacing:'0.08em'}}>{l}</span>
-                      <span style={{color:'rgba(255,255,255,0.88)',fontSize:'10px',lineHeight:'1.4'}}>{v}</span>
+                    {l:'EVENT',v:cinematic.label,highlight:false},
+                    {l:'STRIKE ORIGIN',v:cinematic.originLabel,highlight:false},
+                    {l:'TARGET ZONE',v:cinematic.targetLabel,highlight:false},
+                    {l:'TYPE',v:cinematic.eventType.toUpperCase(),highlight:false},
+                    {l:'IMPACT LEVEL',v:`${cinematic.impact}/10 — ${cinematic.impact>=9?'CATASTROPHIC':cinematic.impact>=7?'SEVERE':'SIGNIFICANT'}`,highlight:true},
+                    {l:'CASUALTIES',v:cinematic.casualties,highlight:true},
+                    {l:'STATUS',v:'IMPACT CONFIRMED · DAMAGE ASSESSMENT ONGOING',highlight:false},
+                  ].map(({l,v,highlight})=>(
+                    <div key={l} className="flex gap-3 mb-2.5">
+                      <span style={{color:'rgba(255,255,255,0.3)',fontSize:'10px',width:'110px',flexShrink:0,letterSpacing:'0.08em'}}>{l}</span>
+                      <span style={{color:highlight?cinematic.color:'rgba(255,255,255,0.88)',fontSize:'10px',lineHeight:'1.5',fontWeight:highlight?'bold':'normal'}}>{v}</span>
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 text-center font-orbitron" style={{color:`${cinematic.color}80`,fontSize:'9px',letterSpacing:'0.2em'}}>
-                  RETURNING TO COMMAND VIEW...
+                <div className="mt-5 py-3 text-center rounded-lg" style={{background:`${cinematic.color}10`,border:`1px solid ${cinematic.color}25`}}>
+                  <div className="font-orbitron" style={{color:`${cinematic.color}`,fontSize:'10px',letterSpacing:'0.2em'}}>
+                    INTELLIGENCE FEED INCOMING — SATELLITE COVERAGE ACTIVE
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Persistent status banner (all phases except alert/done) */}
-          {(cinematic.phase==='zoom'||cinematic.phase==='satellite'||cinematic.phase==='missile')&&(
+          {/* Persistent status banner */}
+          {(cinematic.phase==='zoom'||cinematic.phase==='missile')&&(
             <div className="absolute left-1/2" style={{
               zIndex:30, top:'52px', transform:'translateX(-50%)',
               background:'rgba(0,0,0,0.9)',
@@ -746,9 +790,8 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
               whiteSpace:'nowrap',
             }}>
               <div className="font-orbitron font-bold text-center" style={{color:cinematic.color,fontSize:'12px',letterSpacing:'0.2em'}}>
-                {cinematic.phase==='zoom'?'TRACKING TARGET — CAMERA LOCK':''}
-                {cinematic.phase==='satellite'?'⬢ SATELLITE VIEW ENGAGED':''}
-                {cinematic.phase==='missile'?'🚀 STRIKE IN PROGRESS':''}
+                {cinematic.phase==='zoom'?`TRACKING TARGET — ${cinematic.originLabel} → ${cinematic.targetLabel}`:''}
+                {cinematic.phase==='missile'?`🚀 STRIKE IN PROGRESS — ${cinematic.originLabel} → ${cinematic.targetLabel}`:''}
               </div>
               <div className="font-mono text-center mt-0.5" style={{color:'rgba(255,255,255,0.55)',fontSize:'10px'}}>
                 {cinematic.label}
