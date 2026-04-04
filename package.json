@@ -20,7 +20,6 @@
     "prop-types": "^15.8.1",
     "react": "^18",
     "react-dom": "^18",
-    "react-leaflet": "^5.0.0",
     "react-simple-maps": "^3.0.0"
   },
   "devDependencies": {
