@@ -334,13 +334,14 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     if (!mapDivRef.current || leafletMapRef.current) return;
 
     const map = L.map(mapDivRef.current, {
-      center: [20, 15],
-      zoom: 2,
-      minZoom: 1,
+      center: [25, 15],
+      zoom: 3,
+      minZoom: 2,
       maxZoom: 16,
       zoomControl: false,
       attributionControl: true,
       worldCopyJump: false,
+      zoomSnap: 0.5,
     });
 
     // ESRI World Imagery satellite tiles (free, no key)
@@ -471,16 +472,38 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     setTimeout(()=>setArcs([]),6000);
 
     const now=Date.now();
-    if(ev.impact>=8&&(now-lastPanTimeRef.current)>20000&&leafletMapRef.current){
+    if(ev.impact>=7&&(now-lastPanTimeRef.current)>20000&&leafletMapRef.current){
       lastPanTimeRef.current=now;
-      const panTarget=ev.affectedLeaders[1]
-        ?(LEADER_COORDS[ev.affectedLeaders[1]]||REGION_COORDS[ev.region]||origin)
+      const map=leafletMapRef.current;
+
+      // Frame BOTH origin and target so the full strike corridor is visible
+      const targetLid2=ev.affectedLeaders[1];
+      const dest2=targetLid2
+        ?(LEADER_COORDS[targetLid2]||REGION_COORDS[ev.region]||origin)
         :(REGION_COORDS[ev.region]||origin);
-      const zoom=ev.impact>=9?5:4;
-      leafletMapRef.current.flyTo(L.latLng(panTarget[1],panTarget[0]),zoom,{duration:3,easeLinearity:0.2});
+
+      const originLL=L.latLng(origin[1],origin[0]);
+      const destLL=L.latLng(dest2[1],dest2[0]);
+
+      // If origin === dest (same country event), just fly to that point zoomed in
+      const isSamePoint=originLL.distanceTo(destLL)<500000; // < 500 km apart
+      if(isSamePoint){
+        map.flyTo(destLL, ev.impact>=9?7:6, {duration:3,easeLinearity:0.2});
+      } else {
+        // fitBounds frames both countries with padding — auto-picks zoom
+        const bounds=L.latLngBounds([originLL,destLL]);
+        map.flyToBounds(bounds,{
+          padding:[60,60],
+          maxZoom: ev.impact>=9?7:6,
+          duration:3,
+          easeLinearity:0.2,
+        });
+      }
+
+      // Return to overview after cinematic
       setTimeout(()=>{
-        if(leafletMapRef.current) leafletMapRef.current.flyTo(L.latLng(20,15),2,{duration:4,easeLinearity:0.25});
-      },14000);
+        if(leafletMapRef.current) leafletMapRef.current.flyTo(L.latLng(25,15),3,{duration:4,easeLinearity:0.25});
+      },16000);
     }
 
     return()=>{ cinematicRef.current.forEach(t=>clearTimeout(t)); };
