@@ -151,16 +151,56 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
     <svg
       style={{ position:'absolute', top:0, left:0, width:W, height:H, pointerEvents:'none', zIndex:500, overflow:'visible' }}
     >
-      {/* ── Arcs ── */}
+      <defs>
+        {/* Glow filter for all SVG elements */}
+        <filter id="glow-sm" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-md" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-lg" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="10" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="arc-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      {/* ── Arcs — glowing Bezier trails ── */}
       {arcs.map(arc=>{
         const [x1,y1]=px(arc.from[0],arc.from[1]);
         const [x2,y2]=px(arc.to[0],arc.to[1]);
         const mx=(x1+x2)/2, dist=Math.sqrt((x2-x1)**2+(y2-y1)**2);
         const my=(y1+y2)/2-Math.max(30,dist*0.3);
+        const d=`M${x1},${y1} Q${mx},${my} ${x2},${y2}`;
+        const pathLen=Math.round(dist*1.3);
         return(
-          <path key={arc.id} d={`M${x1},${y1} Q${mx},${my} ${x2},${y2}`}
-            fill="none" stroke={arc.color} strokeWidth={1.8} strokeOpacity={0.75}
-            strokeDasharray="6,4" strokeLinecap="round"/>
+          <g key={arc.id} filter="url(#arc-glow)">
+            {/* Glow halo */}
+            <path d={d} fill="none" stroke={arc.color} strokeWidth={5} strokeOpacity={0.18} strokeLinecap="round"/>
+            {/* Core line */}
+            <path d={d} fill="none" stroke={arc.color} strokeWidth={1.5} strokeOpacity={0.9}
+              strokeDasharray="8,5" strokeLinecap="round"/>
+            {/* Animated travelling pulse */}
+            <path id={`arc-path-${arc.id}`} d={d} fill="none"/>
+            <circle r="3.5" fill={arc.color} opacity="0.95" filter="url(#glow-sm)">
+              <animateMotion dur="2.5s" repeatCount="indefinite" rotate="auto">
+                <mpath href={`#arc-path-${arc.id}`}/>
+              </animateMotion>
+            </circle>
+            {/* Origin dot */}
+            <circle cx={x1} cy={y1} r="4" fill={arc.color} opacity="0.7" filter="url(#glow-sm)"/>
+            {/* Destination ring */}
+            <circle cx={x2} cy={y2} r="0" fill="none" stroke={arc.color} strokeWidth="1.5">
+              <animate attributeName="r" values={`0;${Math.max(12,pathLen*0.04)}`} dur="1.2s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.8;0" dur="1.2s" repeatCount="indefinite"/>
+            </circle>
+          </g>
         );
       })}
 
@@ -169,24 +209,37 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
         const t=easeInOut(Math.min(u.progress,1));
         const [ux,uy]=px(lerp(u.from[0],u.to[0],t),lerp(u.from[1],u.to[1],t));
         if(u.exploding){
-          const r=8+u.progress*40;
+          const r=10+u.progress*60;
+          const op=Math.max(0,0.9-u.progress);
           return(
-            <g key={u.id}>
-              <circle cx={ux} cy={uy} r={r} fill="none" stroke={u.color} strokeWidth={2} opacity={Math.max(0,0.9-u.progress)}/>
-              <circle cx={ux} cy={uy} r={r*0.35} fill={u.color} opacity={Math.max(0,0.7-u.progress)}/>
-              <circle cx={ux} cy={uy} r={r*0.6} fill="none" stroke={u.color} strokeWidth={1} opacity={Math.max(0,0.5-u.progress*0.7)}/>
+            <g key={u.id} filter="url(#glow-md)">
+              <circle cx={ux} cy={uy} r={r} fill="none" stroke={u.color} strokeWidth={2.5} opacity={op}/>
+              <circle cx={ux} cy={uy} r={r*0.55} fill={u.color} opacity={Math.max(0,0.65-u.progress)}/>
+              <circle cx={ux} cy={uy} r={r*0.8} fill="none" stroke={u.color} strokeWidth={1} opacity={Math.max(0,0.4-u.progress*0.6)}/>
+              {/* Secondary ring */}
+              <circle cx={ux} cy={uy} r={r*1.4} fill="none" stroke={u.color} strokeWidth={0.8} opacity={Math.max(0,0.25-u.progress*0.3)}/>
+              {/* Core flash */}
+              <circle cx={ux} cy={uy} r={r*0.2} fill="white" opacity={Math.max(0,0.9-u.progress*2)}/>
             </g>
           );
         }
-        const sym = u.kind==='nuclear'?'☢':u.kind==='submarine'?'◎':u.kind==='naval'?'⚓':u.kind==='missile'?'⟶':u.kind==='troops'?'▲':'✈';
+        const sym = u.kind==='nuclear'?'☢':u.kind==='submarine'?'◎':u.kind==='naval'?'⚓':u.kind==='missile'?'▶':u.kind==='troops'?'▲':'✈';
         return(
-          <g key={u.id} transform={`translate(${ux},${uy})`}>
-            <circle r={5} fill={u.color} opacity={0.2}/>
-            <circle r={3} fill={u.color} opacity={0.9} style={{filter:`drop-shadow(0 0 4px ${u.color})`}}/>
-            <text textAnchor="middle" y={-8} style={{fontSize:'10px',fill:u.color,fontFamily:'Share Tech Mono, monospace',fontWeight:'bold'}}>
+          <g key={u.id} transform={`translate(${ux},${uy})`} filter="url(#glow-sm)">
+            {/* Glow halo */}
+            <circle r={9} fill={u.color} opacity={0.12}/>
+            {/* Core dot */}
+            <circle r={4} fill={u.color} opacity={0.95}/>
+            <circle r={2} fill="white" opacity={0.8}/>
+            {/* Symbol */}
+            <text textAnchor="middle" y={-10} style={{fontSize:'11px',fill:u.color,fontFamily:'Share Tech Mono, monospace',fontWeight:'bold'}}>
               {sym}
             </text>
-            <text textAnchor="middle" y={16} style={{fontSize:'7px',fill:'rgba(255,255,255,0.7)',fontFamily:'Share Tech Mono, monospace'}}>
+            {/* Label */}
+            <text textAnchor="middle" y={18} style={{
+              fontSize:'7px',fill:'rgba(255,255,255,0.7)',fontFamily:'Share Tech Mono, monospace',
+              paintOrder:'stroke',stroke:'rgba(0,0,0,0.9)',strokeWidth:'2px',
+            }}>
               {u.originLabel}
             </text>
           </g>
@@ -198,23 +251,48 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
         const coords=(REGION_COORDS[zone.name]||REGION_COORDS[zone.region]||[0,20]) as [number,number];
         const [cx,cy]=px(coords[0],coords[1]);
         const color=SEV_COLORS[zone.severity];
-        const r=zone.severity==='critical'?14:zone.severity==='high'?11:8;
+        const r=zone.severity==='critical'?16:zone.severity==='high'?12:9;
+        const isCrit=zone.severity==='critical';
         return(
           <g key={zone.id}>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={1.5} opacity={0}>
-              <animate attributeName="r" values={`${r};${r*3.5}`} dur="2.5s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0.7;0" dur="2.5s" repeatCount="indefinite"/>
+            {/* Heatmap glow under high-conflict regions */}
+            <radialGradient id={`heat-${zone.id}`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={color} stopOpacity="0.25"/>
+              <stop offset="100%" stopColor={color} stopOpacity="0"/>
+            </radialGradient>
+            <circle cx={cx} cy={cy} r={r*5} fill={`url(#heat-${zone.id})`}/>
+
+            {/* Slow outer ring */}
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={isCrit?2:1.5} opacity={0}>
+              <animate attributeName="r" values={`${r};${r*4.5}`} dur={isCrit?'1.8s':'2.8s'} repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.8;0" dur={isCrit?'1.8s':'2.8s'} repeatCount="indefinite"/>
             </circle>
-            <circle cx={cx} cy={cy} r={r*0.6} fill="none" stroke={color} strokeWidth={1} opacity={0}>
-              <animate attributeName="r" values={`${r*0.6};${r*2.2}`} dur="2.5s" begin="1s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0.5;0" dur="2.5s" begin="1s" repeatCount="indefinite"/>
+            {/* Mid ring offset */}
+            <circle cx={cx} cy={cy} r={r*0.7} fill="none" stroke={color} strokeWidth={1} opacity={0}>
+              <animate attributeName="r" values={`${r*0.7};${r*3}`} dur={isCrit?'1.8s':'2.8s'} begin="0.6s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.6;0" dur={isCrit?'1.8s':'2.8s'} begin="0.6s" repeatCount="indefinite"/>
             </circle>
-            <circle cx={cx} cy={cy} r={r*0.45} fill={color} opacity={0.9} style={{filter:`drop-shadow(0 0 6px ${color})`}}/>
-            <circle cx={cx} cy={cy} r={r*0.18} fill="white" opacity={0.95}/>
-            <text x={cx+r*0.6} y={cy-r*0.5} style={{fontSize:'9px',fill:color,fontFamily:'Share Tech Mono, monospace',fontWeight:'bold'}}>
+            {/* Inner ring */}
+            <circle cx={cx} cy={cy} r={r*0.4} fill="none" stroke={color} strokeWidth={1} opacity={0}>
+              <animate attributeName="r" values={`${r*0.4};${r*1.8}`} dur={isCrit?'1.8s':'2.8s'} begin="1.1s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.5;0" dur={isCrit?'1.8s':'2.8s'} begin="1.1s" repeatCount="indefinite"/>
+            </circle>
+
+            {/* Core marker */}
+            <circle cx={cx} cy={cy} r={r*0.55} fill={color} opacity={0.9} filter="url(#glow-md)"/>
+            <circle cx={cx} cy={cy} r={r*0.22} fill="white" opacity={0.95}/>
+
+            {/* Labels with stroke outline for readability */}
+            <text x={cx+r*0.7} y={cy-r*0.4} style={{
+              fontSize:'10px',fill:color,fontFamily:'Share Tech Mono, monospace',fontWeight:'bold',
+              paintOrder:'stroke',stroke:'rgba(0,0,0,0.95)',strokeWidth:'3px',
+            }}>
               {zone.name}
             </text>
-            <text x={cx+r*0.6} y={cy+r*0.6} style={{fontSize:'8px',fill:`${color}aa`,fontFamily:'Share Tech Mono, monospace'}}>
+            <text x={cx+r*0.7} y={cy+r*0.8} style={{
+              fontSize:'8px',fill:`${color}cc`,fontFamily:'Share Tech Mono, monospace',
+              paintOrder:'stroke',stroke:'rgba(0,0,0,0.9)',strokeWidth:'2px',
+            }}>
               {zone.severity.toUpperCase()}
             </text>
           </g>
@@ -236,11 +314,10 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
                 <animate attributeName="opacity" values="0.6;0" dur="1.5s" repeatCount="indefinite"/>
               </circle>
             )}
-            <circle cx={cx} cy={cy} r={isWar?5:3.5} fill={lc} opacity={0.85}
-              style={{filter:`drop-shadow(0 0 ${isWar?6:3}px ${lc})`}}/>
-            <circle cx={cx} cy={cy} r={isWar?2.5:1.8} fill="white" opacity={0.9}/>
-            <text x={cx+7} y={cy-5} style={{fontSize:'9px',fill:lc,fontFamily:'Share Tech Mono, monospace',fontWeight:'bold',
-              paintOrder:'stroke',stroke:'rgba(0,0,0,0.95)',strokeWidth:'3px'}}>
+            <circle cx={cx} cy={cy} r={isWar?6:4} fill={lc} opacity={0.9} filter={isWar?'url(#glow-md)':'url(#glow-sm)'}/>
+            <circle cx={cx} cy={cy} r={isWar?3:2} fill="white" opacity={0.95}/>
+            <text x={cx+8} y={cy-5} style={{fontSize:'9px',fill:lc,fontFamily:'Share Tech Mono, monospace',fontWeight:'bold',
+              paintOrder:'stroke',stroke:'rgba(0,0,10,0.98)',strokeWidth:'4px'}}>
               {LEADER_FLAGS[leader.id]||''} {LEADER_NAMES[leader.id]||leader.id.toUpperCase()}
             </text>
           </g>
@@ -344,16 +421,16 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       zoomSnap: 0.5,
     });
 
-    // ESRI World Imagery satellite tiles (free, no key)
+    // CartoDB Dark Matter — deep navy oceans, muted land, neon labels
     L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { attribution: '© Esri, DigitalGlobe, USDA, AeroGRID & GIS Community', maxZoom: 18 }
+      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
+      { attribution: '© CARTO', maxZoom: 18, subdomains: 'abcd' }
     ).addTo(map);
 
-    // CartoDB dark labels overlay
+    // CartoDB dark labels (city names, borders) at reduced opacity for the tactical look
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-      { attribution: '© CARTO', maxZoom: 18, opacity: 0.85 }
+      { attribution: '© CARTO', maxZoom: 18, opacity: 0.55, subdomains: 'abcd' }
     ).addTo(map);
 
     const onMove = () => setMapVersion(v => v + 1);
@@ -532,20 +609,127 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
       {/* Leaflet renders into this div via useEffect — do NOT add children here */}
 
-      {/* ── Dark military overlay ── */}
+      {/* ── Injected animation keyframes ── */}
+      <style>{`
+        @keyframes grid-drift { 0%{transform:translate(0,0)} 100%{transform:translate(50px,50px)} }
+        @keyframes scanline-move { 0%{transform:translateY(-100%)} 100%{transform:translateY(100vh)} }
+        @keyframes radar-sweep {
+          0%  { transform: rotate(0deg); opacity: 0.7; }
+          100%{ transform: rotate(360deg); opacity: 0.7; }
+        }
+        @keyframes grain-shift {
+          0%,100%{ transform: translate(0,0) }
+          10%    { transform: translate(-1%,-1%) }
+          30%    { transform: translate(1%,0.5%) }
+          50%    { transform: translate(-0.5%,1%) }
+          70%    { transform: translate(0.5%,-0.5%) }
+          90%    { transform: translate(-1%,0.5%) }
+        }
+        @keyframes border-glow-pulse {
+          0%,100%{ opacity:0.55 } 50%{ opacity:1 }
+        }
+        @keyframes data-stream {
+          0%{ stroke-dashoffset: 400 }
+          100%{ stroke-dashoffset: 0 }
+        }
+      `}</style>
+
+      {/* ── Base tint: deep navy over CartoDB dark tiles ── */}
       <div className="absolute inset-0 pointer-events-none" style={{
-        background:'rgba(0,5,15,0.42)',
+        background:'rgba(0,4,18,0.38)',
         zIndex:400,
         mixBlendMode:'multiply',
       }}/>
 
-      {/* ── Tension vignette ── */}
+      {/* ── Tactical grid overlay ── */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        zIndex:402,
+        overflow:'hidden',
+      }}>
+        {/* Primary grid */}
+        <div style={{
+          position:'absolute', inset:'-50px',
+          backgroundImage:`
+            linear-gradient(rgba(0,200,255,0.055) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,200,255,0.055) 1px, transparent 1px)
+          `,
+          backgroundSize:'60px 60px',
+          animation:'grid-drift 18s linear infinite',
+        }}/>
+        {/* Fine grid */}
+        <div style={{
+          position:'absolute', inset:0,
+          backgroundImage:`
+            linear-gradient(rgba(0,200,255,0.022) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,200,255,0.022) 1px, transparent 1px)
+          `,
+          backgroundSize:'15px 15px',
+        }}/>
+      </div>
+
+      {/* ── Scanline effect ── */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        zIndex:403,
+        overflow:'hidden',
+        opacity:0.4,
+      }}>
+        <div style={{
+          position:'absolute',
+          left:0, right:0, height:'3px',
+          background:'linear-gradient(transparent, rgba(0,200,255,0.18) 50%, transparent)',
+          animation:'scanline-move 8s linear infinite',
+        }}/>
+      </div>
+
+      {/* ── Animated noise/grain ── */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        zIndex:404,
+        opacity:0.025,
+        backgroundImage:`url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+        backgroundSize:'180px 180px',
+        animation:'grain-shift 0.4s steps(1) infinite',
+      }}/>
+
+      {/* ── Edge vignette (always-on) ── */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        zIndex:405,
+        background:'radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.72) 100%)',
+      }}/>
+
+      {/* ── Tension vignette (red pulse when hot) ── */}
       {tension>40&&(
         <div className="absolute inset-0 pointer-events-none" style={{
-          background:`radial-gradient(ellipse at center,transparent 40%,rgba(255,45,85,${(tension-40)/600}) 100%)`,
-          zIndex:401,
+          background:`radial-gradient(ellipse at center,transparent 38%,rgba(255,45,85,${Math.min((tension-40)/400,0.35)}) 100%)`,
+          zIndex:406,
+          animation:'border-glow-pulse 3s ease-in-out infinite',
         }}/>
       )}
+
+      {/* ── Corner HUD decorations (CSS borders, no SVG calc) ── */}
+      {/* Top-left */}
+      <div className="absolute pointer-events-none" style={{top:0,left:0,width:60,height:60,zIndex:407,
+        borderTop:'1.5px solid rgba(0,200,255,0.5)',borderLeft:'1.5px solid rgba(0,200,255,0.5)'}}/>
+      {/* Top-right */}
+      <div className="absolute pointer-events-none" style={{top:0,right:0,width:60,height:60,zIndex:407,
+        borderTop:'1.5px solid rgba(0,200,255,0.5)',borderRight:'1.5px solid rgba(0,200,255,0.5)'}}/>
+      {/* Bottom-left */}
+      <div className="absolute pointer-events-none" style={{bottom:0,left:0,width:60,height:60,zIndex:407,
+        borderBottom:'1.5px solid rgba(0,200,255,0.5)',borderLeft:'1.5px solid rgba(0,200,255,0.5)'}}/>
+      {/* Bottom-right */}
+      <div className="absolute pointer-events-none" style={{bottom:0,right:0,width:60,height:60,zIndex:407,
+        borderBottom:'1.5px solid rgba(0,200,255,0.5)',borderRight:'1.5px solid rgba(0,200,255,0.5)'}}/>
+      {/* Center crosshair ticks */}
+      <div className="absolute pointer-events-none" style={{top:0,left:'50%',width:1,height:14,zIndex:407,background:'rgba(0,200,255,0.3)'}}/>
+      <div className="absolute pointer-events-none" style={{bottom:0,left:'50%',width:1,height:14,zIndex:407,background:'rgba(0,200,255,0.3)'}}/>
+      <div className="absolute pointer-events-none" style={{left:0,top:'50%',height:1,width:14,zIndex:407,background:'rgba(0,200,255,0.3)'}}/>
+      <div className="absolute pointer-events-none" style={{right:0,top:'50%',height:1,width:14,zIndex:407,background:'rgba(0,200,255,0.3)'}}/>
+      {/* Top HUD label */}
+      <div className="absolute pointer-events-none font-mono" style={{
+        top:6,left:'50%',transform:'translateX(-50%)',zIndex:408,
+        color:'rgba(0,200,255,0.4)',fontSize:'9px',letterSpacing:'0.3em',whiteSpace:'nowrap',
+      }}>
+        GEOWARS MATRIX · GLOBAL TACTICAL OVERVIEW
+      </div>
 
       {/* ── Animated game overlay (SVG) ── */}
       {leafletMap && (
@@ -736,14 +920,28 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       )}
 
       <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{
-        zIndex:600,background:'rgba(0,0,0,0.75)',borderTop:'1px solid rgba(0,245,255,0.12)',
-        padding:'4px 10px',display:'flex',alignItems:'center',gap:'14px'}}>
-        <span className="font-mono" style={{color:'rgba(0,245,255,0.5)',fontSize:'9px',letterSpacing:'0.12em'}}>
-          GEOWARS MATRIX · SATELLITE INTELLIGENCE VIEW · ESRI WORLD IMAGERY
-        </span>
-        <span className="font-mono" style={{color:`${tc}80`,fontSize:'9px',letterSpacing:'0.1em'}}>
-          TENSION: {tension}/100 · ACTIVE ZONES: {conflictZones.length}
-        </span>
+        zIndex:600,
+        background:'linear-gradient(to top, rgba(0,2,12,0.92) 0%, transparent 100%)',
+        borderTop:'1px solid rgba(0,200,255,0.15)',
+        padding:'5px 14px',display:'flex',alignItems:'center',gap:'16px'}}>
+        <div className="font-mono" style={{color:'rgba(0,200,255,0.55)',fontSize:'9px',letterSpacing:'0.18em'}}>
+          <span className="status-blink" style={{marginRight:'6px',color:'rgba(0,200,255,0.7)'}}>⬤</span>
+          TACTICAL GRID ACTIVE
+        </div>
+        <div style={{flex:1,height:'1px',background:'linear-gradient(90deg,rgba(0,200,255,0.2),transparent)'}}/>
+        <div className="font-mono" style={{color:`${tc}`,fontSize:'9px',letterSpacing:'0.14em'}}>
+          TENSION <span style={{fontWeight:'bold'}}>{tension}</span>/100
+        </div>
+        <div style={{width:'80px',height:'3px',background:'rgba(255,255,255,0.08)',borderRadius:'2px',overflow:'hidden'}}>
+          <div style={{width:`${tension}%`,height:'100%',background:`linear-gradient(90deg,#00ff9d,${tc})`,boxShadow:`0 0 6px ${tc}`}}/>
+        </div>
+        <div className="font-mono" style={{color:'rgba(255,255,255,0.3)',fontSize:'9px',letterSpacing:'0.12em'}}>
+          ZONES: {conflictZones.length}
+        </div>
+        <div style={{flex:1,height:'1px',background:'linear-gradient(90deg,transparent,rgba(0,200,255,0.2))'}}/>
+        <div className="font-mono" style={{color:'rgba(0,200,255,0.3)',fontSize:'9px',letterSpacing:'0.12em'}}>
+          GEOWARS MATRIX · LIVE INTELLIGENCE
+        </div>
       </div>
     </div>
   );
