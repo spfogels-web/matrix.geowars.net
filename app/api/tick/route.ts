@@ -1,4 +1,6 @@
 // app/api/tick/route.ts — Auto-generate an event and simulate selected leaders
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getState, applyEvent, applyResponses } from '@/lib/engine/state';

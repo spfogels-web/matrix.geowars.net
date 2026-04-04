@@ -28,6 +28,7 @@ async function runTick(pendingRef: React.MutableRefObject<boolean>, setProcessin
   pendingRef.current = true;
   setProcessing(true);
   try { await fetch('/api/tick', { method: 'POST' }); }
+  catch { /* network error — silently skip this tick, next interval will retry */ }
   finally { pendingRef.current = false; setProcessing(false); }
 }
 
