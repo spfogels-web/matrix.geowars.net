@@ -54,8 +54,8 @@ export default function NewsMarquee({ simIntel, tension }: Props) {
   return (
     <>
       {/* ── Marquee bar ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center overflow-hidden"
-        style={{ height: '40px', background: 'rgba(0,0,0,0.92)', borderBottom: `1px solid ${borderColor}`, backdropFilter: 'blur(8px)' }}>
+      <div className="absolute top-0 left-0 right-0 flex items-center overflow-hidden"
+        style={{ zIndex: 620, height: '40px', background: 'rgba(0,0,0,0.92)', borderBottom: `1px solid ${borderColor}`, backdropFilter: 'blur(8px)' }}>
 
         {/* LIVE badge */}
         <div className="shrink-0 flex items-center gap-2 px-3 font-orbitron font-bold"
@@ -121,8 +121,9 @@ export default function NewsMarquee({ simIntel, tension }: Props) {
       </div>
 
       {/* ── Expanded news panel ── */}
-      <div className="absolute left-0 right-0 z-19 overflow-hidden"
+      <div className="absolute left-0 right-0 overflow-hidden"
         style={{
+          zIndex: 619,
           top: '40px',
           maxHeight: expanded ? '340px' : '0px',
           transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)',
