@@ -2,7 +2,6 @@
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { ConflictZone, GeoEvent, Leader, WorldState } from '@/lib/engine/types';
 import CrisisLog from './CrisisLog';
 import CinematicFeed from './CinematicFeed';
@@ -125,14 +124,6 @@ function playSound(soundType:string, impact:number, ctxRef:React.MutableRefObjec
   } catch(_){}
 }
 
-// ── Map controller (inside MapContainer) ──────────────────────────────────────
-function MapController({ mapRef, onMove }: { mapRef: React.MutableRefObject<L.Map|null>; onMove: ()=>void }) {
-  const map = useMap();
-  useEffect(() => { mapRef.current = map; }, [map, mapRef]);
-  useMapEvents({ move: onMove, zoom: onMove, moveend: onMove, zoomend: onMove });
-  return null;
-}
-
 // ── Game overlay: all animated elements as SVG ────────────────────────────────
 interface OverlayProps {
   map: L.Map;
@@ -161,7 +152,7 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
     <svg
       style={{ position:'absolute', top:0, left:0, width:W, height:H, pointerEvents:'none', zIndex:500, overflow:'visible' }}
     >
-      {/* ── Arcs (curved Bezier) ── */}
+      {/* ── Arcs ── */}
       {arcs.map(arc=>{
         const [x1,y1]=px(arc.from[0],arc.from[1]);
         const [x2,y2]=px(arc.to[0],arc.to[1]);
@@ -314,18 +305,17 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const [units, setUnits] = useState<MapUnit[]>([]);
   const [flashColor, setFlashColor] = useState<string|null>(null);
   const [feedActive, setFeedActive] = useState(false);
-  const [mapVersion, setMapVersion] = useState(0); // increments on map move → redraws overlay
+  const [mapVersion, setMapVersion] = useState(0);
   const [leafletMap, setLeafletMap] = useState<L.Map|null>(null);
   const [mousePos, setMousePos] = useState({x:0,y:0});
-  const [hoveredCity, setHoveredCity] = useState<string|null>(null);
+  const [hoveredCity] = useState<string|null>(null);
 
   type CinPhase = 'alert'|'zoom'|'missile'|'impact'|'shockwave'|'report'|'done';
   const [cinematic, setCinematic] = useState<{
     active:boolean; phase:CinPhase; color:string; label:string;
     originLabel:string; targetLabel:string; eventType:string; impact:number;
-    // Pixel coords for missile arc (set from Leaflet projection at cinematic start)
     ox:number; oy:number; tx:number; ty:number;
-    cinW:number; cinH:number; // container size at cinematic start
+    cinW:number; cinH:number;
     casualties:string;
   }>({active:false,phase:'done',color:'#ff2d55',label:'',originLabel:'',targetLabel:'',
     eventType:'military',impact:8,ox:200,oy:400,tx:700,ty:250,cinW:900,cinH:500,casualties:''});
@@ -340,12 +330,46 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const cinematicActiveRef = useRef(false);
   const lastPanTimeRef     = useRef(0);
 
-  const onMapMove = useCallback(() => setMapVersion(v => v+1), []);
+  // ── Initialize Leaflet map imperatively (no react-leaflet) ─────────────────
+  useEffect(() => {
+    if (!mapDivRef.current || leafletMapRef.current) return;
 
-  // Sync leafletMap ref and state
-  const handleMapReady = useCallback((map: L.Map) => {
+    const map = L.map(mapDivRef.current, {
+      center: [20, 15],
+      zoom: 2,
+      minZoom: 1,
+      maxZoom: 16,
+      zoomControl: false,
+      attributionControl: true,
+      worldCopyJump: false,
+    });
+
+    // ESRI World Imagery satellite tiles (free, no key)
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { attribution: '© Esri, DigitalGlobe, USDA, AeroGRID & GIS Community', maxZoom: 18 }
+    ).addTo(map);
+
+    // CartoDB dark labels overlay
+    L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
+      { attribution: '© CARTO', maxZoom: 18, opacity: 0.85 }
+    ).addTo(map);
+
+    const onMove = () => setMapVersion(v => v + 1);
+    map.on('move', onMove);
+    map.on('zoom', onMove);
+    map.on('moveend', onMove);
+    map.on('zoomend', onMove);
+
     leafletMapRef.current = map;
     setLeafletMap(map);
+
+    return () => {
+      map.remove();
+      leafletMapRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Unit animation loop ────────────────────────────────────────────────────
@@ -392,7 +416,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       const rawTargetC=targetLead!==originLead?(LEADER_COORDS[targetLead]||REGION_COORDS[ev.region]||[0,20]):(REGION_COORDS[ev.region]||[0,20]);
       const targetC=rawTargetC as [number,number];
 
-      // Get actual pixel positions from Leaflet (accurate to real satellite map)
       const W=mapDivRef.current?.clientWidth??900;
       const H=mapDivRef.current?.clientHeight??500;
       let ox=W*0.25, oy=H*0.6, tx=W*0.75, ty=H*0.35;
@@ -434,7 +457,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     const origin=(LEADER_COORDS[originLid]||REGION_COORDS[ev.region]||REGION_COORDS['Global']) as [number,number];
     const originName=LEADER_NAMES[originLid]||ev.region||'UNKNOWN';
 
-    // Spawn units
     const count=ev.impact>=8?3:ev.impact>=5?2:1;
     const newUnits:MapUnit[]=ev.affectedLeaders.slice(1,1+count).map((lid,i)=>{
       const dest=(LEADER_COORDS[lid]||LEADER_COORDS['usa']) as [number,number];
@@ -442,7 +464,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     });
     if(newUnits.length>0){unitsRef.current=[...unitsRef.current.slice(-8),...newUnits];setUnits([...unitsRef.current]);}
 
-    // Arcs
     const arcTargets=ev.affectedLeaders.slice(1,5).filter(l=>l!==originLid);
     const newArcs:Arc[]=arcTargets.length>0
       ?arcTargets.map((lid,i)=>({id:`arc_${Date.now()}_${i}`,from:origin,to:(LEADER_COORDS[lid]||REGION_COORDS[ev.region]||origin) as [number,number],color}))
@@ -450,7 +471,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     setArcs(newArcs);
     setTimeout(()=>setArcs([]),6000);
 
-    // Pan using Leaflet's flyTo (smooth, native) — rate-limited
     const now=Date.now();
     if(ev.impact>=8&&(now-lastPanTimeRef.current)>20000&&leafletMapRef.current){
       lastPanTimeRef.current=now;
@@ -459,7 +479,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         :(REGION_COORDS[ev.region]||origin);
       const zoom=ev.impact>=9?5:4;
       leafletMapRef.current.flyTo(L.latLng(panTarget[1],panTarget[0]),zoom,{duration:3,easeLinearity:0.2});
-      // Return to world view after 12s
       setTimeout(()=>{
         if(leafletMapRef.current) leafletMapRef.current.flyTo(L.latLng(20,15),2,{duration:4,easeLinearity:0.25});
       },14000);
@@ -471,7 +490,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
   const tc=tension>=75?'#ff2d55':tension>=55?'#ff6a00':tension>=30?'#ffd700':'#00f5ff';
 
-  // Cinematic missile arc computed values
   const cinMidX=(cinematic.ox+cinematic.tx)/2;
   const cinDist=Math.sqrt((cinematic.tx-cinematic.ox)**2+(cinematic.ty-cinematic.oy)**2);
   const cinArcH=Math.max(60,cinDist*0.45);
@@ -490,31 +508,9 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         setMousePos({x:e.clientX-r.left,y:e.clientY-r.top});
       }}>
 
-      {/* ── Leaflet map ── */}
-      <MapContainer
-        center={[20,15]} zoom={2} minZoom={1} maxZoom={16}
-        zoomControl={false} attributionControl={true}
-        style={{width:'100%',height:'100%',background:'#010a04'}}
-        worldCopyJump={false}>
+      {/* Leaflet renders into this div via useEffect — do NOT add children here */}
 
-        {/* ESRI World Imagery (satellite) */}
-        <TileLayer
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          attribution="&copy; Esri &mdash; Source: Esri, DigitalGlobe, USDA, AeroGRID &amp; the GIS User Community"
-          maxZoom={18}
-        />
-        {/* CartoDB dark labels on top */}
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          maxZoom={18}
-          opacity={0.85}
-        />
-
-        <MapController mapRef={leafletMapRef} onMove={()=>{ onMapMove(); if(leafletMapRef.current) handleMapReady(leafletMapRef.current); }}/>
-      </MapContainer>
-
-      {/* ── Dark military overlay ── (mutes satellite to match UI theme) */}
+      {/* ── Dark military overlay ── */}
       <div className="absolute inset-0 pointer-events-none" style={{
         background:'rgba(0,5,15,0.42)',
         zIndex:400,
@@ -582,7 +578,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
               zIndex:701,transition:'all 1s ease'}}/>
           )}
 
-          {/* Zoom phase banner */}
           {cinematic.phase==='zoom'&&(
             <div className="absolute left-1/2 top-14" style={{transform:'translateX(-50%)',zIndex:703,
               background:'rgba(0,0,0,0.9)',border:`1px solid ${cinematic.color}70`,borderRadius:'8px',
@@ -596,7 +591,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
             </div>
           )}
 
-          {/* Missile phase — pixel-accurate arc on real satellite map */}
           {cinematic.phase==='missile'&&(
             <svg className="absolute inset-0" style={{zIndex:703,pointerEvents:'none'}}
               viewBox={`0 0 ${cinematic.cinW} ${cinematic.cinH}`} preserveAspectRatio="none">
@@ -614,12 +608,10 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
                   <mpath xlinkHref="#cinArc"/>
                 </animateMotion>
               </circle>
-              {/* Origin */}
               <circle cx={cinematic.ox} cy={cinematic.oy} r="7" fill={cinematic.color} opacity="0.6"/>
               <circle cx={cinematic.ox} cy={cinematic.oy} r="14" fill="none" stroke={cinematic.color} strokeWidth="1" opacity="0.3"/>
               <text x={cinematic.ox+12} y={cinematic.oy-8} fill={cinematic.color} fontSize="12"
                 fontFamily="Share Tech Mono" opacity="0.85">{cinematic.originLabel}</text>
-              {/* Target reticle */}
               <circle cx={cinematic.tx} cy={cinematic.ty} r="20" fill="none" stroke={cinematic.color} strokeWidth="1.5">
                 <animate attributeName="r" values="20;40;20" dur="0.9s" repeatCount="indefinite"/>
                 <animate attributeName="opacity" values="0.9;0.2;0.9" dur="0.9s" repeatCount="indefinite"/>
@@ -702,7 +694,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         </div>
       )}
 
-      {/* ── Overlays (unchanged) ── */}
+      {/* ── Overlays ── */}
       <NewsMarquee simIntel={breakingIntel} tension={tension} />
       {!isRunning && worldState && onInitiate && <WorldBriefing state={worldState} onInitiate={onInitiate} />}
       <CinematicFeed active={feedActive} color={cinematic.color} eventTitle={cinematic.label}
@@ -710,7 +702,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         onComplete={()=>setFeedActive(false)}/>
       <CrisisLog events={events} />
 
-      {/* City hover tooltip */}
       {hoveredCity&&(
         <div className="absolute pointer-events-none font-mono" style={{
           left:Math.min(mousePos.x+14,(mapDivRef.current?.clientWidth??800)-220),
@@ -723,7 +714,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         </div>
       )}
 
-      {/* Bottom status bar */}
       <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{
         zIndex:600,background:'rgba(0,0,0,0.75)',borderTop:'1px solid rgba(0,245,255,0.12)',
         padding:'4px 10px',display:'flex',alignItems:'center',gap:'14px'}}>
