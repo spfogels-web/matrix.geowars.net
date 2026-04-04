@@ -5,7 +5,6 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { ConflictZone, GeoEvent, Leader, WorldState } from '@/lib/engine/types';
 import CrisisLog from './CrisisLog';
 import CinematicFeed from './CinematicFeed';
-import WorldBriefing from './WorldBriefing';
 import NewsMarquee from './NewsMarquee';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -300,7 +299,7 @@ interface Props {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[], worldState, onInitiate }: Props) {
+export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[] }: Props) {
   const [arcs, setArcs]   = useState<Arc[]>([]);
   const [units, setUnits] = useState<MapUnit[]>([]);
   const [flashColor, setFlashColor] = useState<string|null>(null);
@@ -696,7 +695,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
       {/* ── Overlays ── */}
       <NewsMarquee simIntel={breakingIntel} tension={tension} />
-      {!isRunning && worldState && onInitiate && <WorldBriefing state={worldState} onInitiate={onInitiate} />}
       <CinematicFeed active={feedActive} color={cinematic.color} eventTitle={cinematic.label}
         targetLabel={cinematic.targetLabel} eventType={cinematic.eventType} impact={cinematic.impact}
         onComplete={()=>setFeedActive(false)}/>

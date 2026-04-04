@@ -11,6 +11,7 @@ import PredictionPanel from '@/components/predict/PredictionPanel';
 import Leaderboard from '@/components/leaderboard/Leaderboard';
 import { useGame } from '@/lib/predict/GameContext';
 import { WorldState } from '@/lib/engine/types';
+import WorldBriefing from '@/components/map/WorldBriefing';
 
 const SCENARIOS = [
   { id: 'global_tension',    label: 'Global Tension' },
@@ -140,6 +141,11 @@ export default function Home() {
         globalTension={state.globalTension}
         isRunning={state.isRunning && !state.isPaused}
       />
+
+      {/* ── World Briefing — full-screen overlay before sim starts ── */}
+      {!state.isRunning && (
+        <WorldBriefing state={state} onInitiate={() => control('start')} />
+      )}
 
       {/* ── Leaderboard modal ── */}
       <Leaderboard />

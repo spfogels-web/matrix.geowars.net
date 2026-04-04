@@ -413,7 +413,15 @@ function LeaderCard({
 
 export default function LeaderStack({ leaders, activeIds, allLeaders: _allLeaders, isRunning, isExpanded, onToggleExpand, messages }: Props) {
   const [showAll, setShowAll] = useState(false);
-  const activeLeaders = leaders.filter(l => activeIds.includes(l.id));
+  const STATUS_PRIORITY: Record<string, number> = { at_war: 0, mobilizing: 1, hostile: 2, critical: 3, alert: 4, diplomatic: 5, stable: 6 };
+  const activeLeaders = leaders
+    .filter(l => activeIds.includes(l.id))
+    .slice()
+    .sort((a, b) => {
+      const pd = (STATUS_PRIORITY[a.status] ?? 7) - (STATUS_PRIORITY[b.status] ?? 7);
+      if (pd !== 0) return pd;
+      return b.lastActiveAt - a.lastActiveAt; // most recently active first within same tier
+    });
   const watchlist = leaders.filter(l => !activeIds.includes(l.id)).slice(0, 10);
 
   // Build a map of leaderId → latest message
