@@ -315,6 +315,42 @@ function LeaderCard({
           </div>
         </div>
 
+        {/* Stance + memory badges */}
+        {leader.memory && (
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            {/* Stance badge */}
+            {(() => {
+              const stance = leader.memory.stance;
+              const stanceColor = stance === 'escalating' ? '#ff6a00' : stance === 'de-escalating' ? '#00ff9d' : 'rgba(0,245,255,0.6)';
+              const stanceIcon = stance === 'escalating' ? '▲' : stance === 'de-escalating' ? '▼' : '■';
+              return (
+                <span className="font-mono" style={{
+                  color: stanceColor, fontSize: '9px', letterSpacing: '0.1em',
+                  background: `${stanceColor}12`, padding: '1px 6px', borderRadius: '3px',
+                  border: `1px solid ${stanceColor}35`,
+                }}>
+                  {stanceIcon} {stance.toUpperCase()}
+                </span>
+              );
+            })()}
+            {/* Aggression delta */}
+            {leader.memory.aggressionDelta !== 0 && (
+              <span className="font-mono" style={{
+                color: leader.memory.aggressionDelta > 0 ? '#ff6a00' : '#00ff9d',
+                fontSize: '9px', opacity: 0.8,
+              }}>
+                {leader.memory.aggressionDelta > 0 ? '↑' : '↓'}{Math.abs(leader.memory.aggressionDelta).toFixed(1)}/tick
+              </span>
+            )}
+            {/* Message count badge */}
+            {leader.totalMessages > 0 && (
+              <span className="font-mono ml-auto" style={{ color: 'rgba(200,210,240,0.3)', fontSize: '9px' }}>
+                {leader.totalMessages} msgs
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Aggression bar */}
         <div className="mb-3" style={{ height: '3px', background: 'rgba(255,255,255,0.12)', borderRadius: '2px', overflow: 'hidden' }}>
           <div style={{
@@ -377,33 +413,64 @@ function LeaderCard({
 
         {/* Expanded detail */}
         {expanded && (
-          <div className="mt-4 pt-3.5 border-t grid grid-cols-2 gap-4 fade-in" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
-            <div>
-              <div className="font-mono mb-2" style={{ color: 'rgba(0,245,255,0.65)', fontSize: '11px', letterSpacing: '0.1em' }}>ECONOMY</div>
-              {[
-                { l:'GDP GROWTH', v:`${leader.economy.gdpGrowth>0?'+':''}${leader.economy.gdpGrowth}%` },
-                { l:'INFLATION',  v:`${leader.economy.inflationRate}%` },
-                { l:'SANCTIONS',  v:`${leader.economy.sanctionsImpact}%` },
-              ].map(({ l, v }) => (
-                <div key={l} className="flex justify-between mb-1">
-                  <span className="font-mono" style={{ color:'rgba(255,255,255,0.42)', fontSize:'11px' }}>{l}</span>
-                  <span className="font-mono font-bold" style={{ color:'rgba(230,235,255,0.92)', fontSize:'11px' }}>{v}</span>
-                </div>
-              ))}
+          <div className="mt-4 pt-3.5 border-t fade-in" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <div className="font-mono mb-2" style={{ color: 'rgba(0,245,255,0.65)', fontSize: '11px', letterSpacing: '0.1em' }}>ECONOMY</div>
+                {[
+                  { l:'GDP GROWTH', v:`${leader.economy.gdpGrowth>0?'+':''}${leader.economy.gdpGrowth}%` },
+                  { l:'INFLATION',  v:`${leader.economy.inflationRate}%` },
+                  { l:'SANCTIONS',  v:`${leader.economy.sanctionsImpact}%` },
+                ].map(({ l, v }) => (
+                  <div key={l} className="flex justify-between mb-1">
+                    <span className="font-mono" style={{ color:'rgba(255,255,255,0.42)', fontSize:'11px' }}>{l}</span>
+                    <span className="font-mono font-bold" style={{ color:'rgba(230,235,255,0.92)', fontSize:'11px' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div className="font-mono mb-2" style={{ color:'rgba(180,79,255,0.65)', fontSize:'11px', letterSpacing:'0.1em' }}>MILITARY</div>
+                {[
+                  { l:'READINESS', v:`${leader.military.readiness}%` },
+                  { l:'NUCLEAR',   v:leader.military.nuclearCapable?'YES':'NO' },
+                  { l:'ALERT',     v:leader.military.nuclearAlert?'🔴 ACTIVE':'🟢 NORMAL' },
+                ].map(({ l, v }) => (
+                  <div key={l} className="flex justify-between mb-1">
+                    <span className="font-mono" style={{ color:'rgba(255,255,255,0.42)', fontSize:'11px' }}>{l}</span>
+                    <span className="font-mono font-bold" style={{ color:'rgba(230,235,255,0.92)', fontSize:'11px' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div>
-              <div className="font-mono mb-2" style={{ color:'rgba(180,79,255,0.65)', fontSize:'11px', letterSpacing:'0.1em' }}>MILITARY</div>
-              {[
-                { l:'READINESS', v:`${leader.military.readiness}%` },
-                { l:'NUCLEAR',   v:leader.military.nuclearCapable?'YES':'NO' },
-                { l:'ALERT',     v:leader.military.nuclearAlert?'🔴 ACTIVE':'🟢 NORMAL' },
-              ].map(({ l, v }) => (
-                <div key={l} className="flex justify-between mb-1">
-                  <span className="font-mono" style={{ color:'rgba(255,255,255,0.42)', fontSize:'11px' }}>{l}</span>
-                  <span className="font-mono font-bold" style={{ color:'rgba(230,235,255,0.92)', fontSize:'11px' }}>{v}</span>
-                </div>
-              ))}
-            </div>
+            {/* Memory section */}
+            {leader.memory && leader.memory.pastActions.length > 0 && (
+              <div className="rounded-lg p-2.5" style={{ background: 'rgba(0,0,0,0.4)', border: `1px solid ${sc}20` }}>
+                <div className="font-mono mb-1.5" style={{ color: `${sc}70`, fontSize: '10px', letterSpacing: '0.1em' }}>MEMORY · RECENT ACTIONS</div>
+                {leader.memory.pastActions.slice(0, 3).map((action, i) => (
+                  <div key={i} className="flex items-start gap-1.5 mb-1">
+                    <span style={{ color: `${sc}60`, fontSize: '10px', flexShrink: 0 }}>▸</span>
+                    <span className="font-mono" style={{ color: 'rgba(200,210,240,0.65)', fontSize: '10px', lineHeight: '1.4' }}>{action}</span>
+                  </div>
+                ))}
+                {Object.keys(leader.memory.trustLevels).length > 0 && (
+                  <div className="mt-1.5 pt-1.5" style={{ borderTop: `1px solid ${sc}15` }}>
+                    <div className="font-mono mb-1" style={{ color: `${sc}60`, fontSize: '9px' }}>TRUST LEVELS</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(leader.memory.trustLevels).slice(0, 6).map(([id, trust]) => (
+                        <span key={id} className="font-mono" style={{
+                          fontSize: '9px', padding: '1px 5px', borderRadius: '3px',
+                          color: trust > 0 ? '#00ff9d' : '#ff2d55',
+                          background: trust > 0 ? 'rgba(0,255,157,0.08)' : 'rgba(255,45,85,0.08)',
+                          border: `1px solid ${trust > 0 ? 'rgba(0,255,157,0.2)' : 'rgba(255,45,85,0.2)'}`,
+                        }}>
+                          {id}: {trust > 0 ? '+' : ''}{trust}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

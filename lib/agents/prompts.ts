@@ -29,7 +29,12 @@ export function buildUserPrompt(leader: Leader, event: GeoEvent, state: WorldSta
   const others = state.leaders
     .filter(l => l.id !== leader.id && l.importanceScore > 50)
     .slice(0, 8)
-    .map(l => `  ${l.flag} ${l.name}: aggression=${l.aggression}% status=${l.status} last="${l.lastStatement.substring(0,80)}"`)
+    .map(l => {
+      const stance = l.memory?.stance ?? 'stable';
+      const trust = leader.memory?.trustLevels[l.id];
+      const trustStr = trust !== undefined ? ` trust=${trust > 0 ? '+' : ''}${trust}` : '';
+      return `  ${l.flag} ${l.name}: aggression=${l.aggression}% status=${l.status} stance=${stance}${trustStr} last="${l.lastStatement.substring(0,80)}"`;
+    })
     .join('\n');
 
   const recentMsgs = state.messages.slice(0, 6)
@@ -50,12 +55,50 @@ ${rwc.headlines.slice(0, 8).map(h => `    • ${h}`).join('\n')}
 Your response must be grounded in this real-world context. Reference specific real events where relevant.
 ` : '';
 
+  // Leader's own memory — past behavior shapes current response
+  const mem = leader.memory;
+  const memorySection = mem && mem.pastStatements.length > 0 ? `
+YOUR MEMORY & PAST STANCE (use this to stay consistent and evolve logically):
+  Behavioral trend: ${mem.stance.toUpperCase()} (aggression delta: ${mem.aggressionDelta > 0 ? '+' : ''}${mem.aggressionDelta}/tick)
+  Total escalation score: ${mem.totalEscalation}
+  Your recent statements:
+${mem.pastStatements.slice(0, 3).map(s => `    • "${s.substring(0, 100)}"`).join('\n')}
+  Your recent actions:
+${mem.pastActions.slice(0, 3).map(a => `    • ${a}`).join('\n')}
+${Object.keys(mem.trustLevels).length > 0 ? `  Your trust levels: ${Object.entries(mem.trustLevels).map(([id, t]) => `${id}=${t > 0 ? '+' : ''}${t}`).join(', ')}` : ''}
+` : '';
+
+  // World history — recent major events that shaped the simulation
+  const historySection = (state.historyLog ?? []).length > 0 ? `
+SIMULATION HISTORY (recent major events — let these shape your position):
+${(state.historyLog ?? []).slice(0, 8).map(h =>
+    `  [Cycle ${h.cycleNumber}] ${h.type.toUpperCase()} (impact ${h.impact}/10): ${h.title} — ${h.region}`
+  ).join('\n')}
+` : '';
+
+  // Active user bots in the simulation — they are influencing outcomes
+  const bots = state.bots ?? [];
+  const botSection = bots.length > 0 ? `
+ACTIVE INFLUENCE AGENTS in this simulation:
+${bots.map(b => `  • ${b.name} [${b.class.toUpperCase()}/${b.alignment.toUpperCase()}] deployed in ${b.activeRegion} — specialty: ${b.specialty}`).join('\n')}
+These agents are shaping events. Factor their presence into your calculations.
+` : '';
+
+  // Adaptive behavior hints based on world state
+  const economicStress = state.economicStress ?? 0;
+  const adaptiveHints = [];
+  if (economicStress > 60) adaptiveHints.push(`Economic stress is CRITICAL (${economicStress}/100) — markets are destabilizing`);
+  if (state.globalTension > 75) adaptiveHints.push(`Global tension CRITICAL — retaliation probability elevated for repeated attacks`);
+  if (mem && mem.stance === 'escalating') adaptiveHints.push(`Your own trajectory has been escalating — consider whether to continue or recalibrate`);
+  if (mem && mem.stance === 'de-escalating') adaptiveHints.push(`You have been de-escalating — a new provocation may force you to reverse course`);
+  const adaptiveSection = adaptiveHints.length > 0 ? `\nSITUATIONAL CONTEXT:\n${adaptiveHints.map(h => `  ⚠ ${h}`).join('\n')}\n` : '';
+
   return `SIMULATION CYCLE ${state.currentCycleNumber} | TICK ${state.tick} | TENSION ${state.globalTension}/100 [${state.threatLevel}]
-${realWorldSection}
+${realWorldSection}${memorySection}${historySection}${botSection}${adaptiveSection}
 GLOBAL INDICATORS:
   Oil: $${ind.oilPrice}/bbl | Gold: $${ind.goldPrice}/oz | S&P: ${ind.sp500}
   VIX: ${ind.vixFear} | Shipping Disruption: ${ind.shippingDisruption}% | Recession Risk: ${ind.recessionRisk}%
-  Sanctions Pressure: ${ind.sanctionsPressure}%
+  Sanctions Pressure: ${ind.sanctionsPressure}%${economicStress > 30 ? ` | Economic Stress: ${economicStress}/100` : ''}
 
 BREAKING EVENT:
   TYPE: ${event.type.toUpperCase()} | IMPACT: ${event.impact}/10 | REGION: ${event.region}
@@ -69,11 +112,11 @@ ${others}
 RECENT COMMUNICATIONS:
 ${recentMsgs || '  [No recent messages]'}
 
-YOUR STATUS: aggression=${leader.aggression}% | status=${leader.status}
+YOUR STATUS: aggression=${leader.aggression}% | status=${leader.status} | stance=${mem?.stance ?? 'unknown'}
 YOUR DEPLOYMENTS: ${leader.military.deployedRegions.join(', ')}
 YOUR ALLIANCES: ${leader.military.alliances.join(', ')}
 
 This event ${event.affectedLeaders.includes(leader.id) ? 'DIRECTLY AFFECTS YOU' : 'indirectly affects your interests'}.
 
-Respond as ${leader.name}. Be specific. Reference real events from the intelligence brief above. Escalation 1=pure diplomacy, 10=military strike or equivalent. Address another leader or ALL. Be authentic to your national doctrine.`;
+Respond as ${leader.name}. Your past behavior shapes this response — be consistent but allow evolution based on new developments. Escalation 1=pure diplomacy, 10=military strike or equivalent. Address another leader or ALL. Be authentic to your national doctrine.`;
 }

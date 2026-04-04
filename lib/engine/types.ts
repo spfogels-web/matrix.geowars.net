@@ -1,5 +1,8 @@
 // lib/engine/types.ts
 export type EventType = 'military' | 'economic' | 'cyber' | 'diplomatic' | 'intelligence' | 'nuclear' | 'humanitarian';
+export type BotClass = 'advisor' | 'economic' | 'intel' | 'disruption' | 'diplomatic';
+export type BotAlignment = 'usa' | 'china' | 'russia' | 'neutral' | 'independent';
+export type BotSpecialty = 'oil' | 'cyber' | 'military' | 'finance' | 'diplomacy' | 'intelligence';
 export type AgentStatus = 'stable' | 'alert' | 'hostile' | 'critical' | 'diplomatic' | 'mobilizing' | 'at_war';
 export type ThreatLevel = 'LOW' | 'ELEVATED' | 'HIGH' | 'CRITICAL' | 'DEFCON_1';
 export type Tone = 'aggressive' | 'defensive' | 'diplomatic' | 'threatening' | 'neutral' | 'defiant';
@@ -50,6 +53,17 @@ export interface LeaderMilitary {
   alliances: string[];
 }
 
+// ── LEADER MEMORY ─────────────────────────────────────────────────────────────
+export interface LeaderMemory {
+  pastStatements: string[];          // last 5 statements
+  pastActions: string[];             // last 5 actions
+  aggressionDelta: number;           // rolling avg delta: positive = escalating
+  trustLevels: Record<string, number>; // leaderId → -100 to +100
+  lastSpokeAt: number;
+  totalEscalation: number;           // cumulative escalation score
+  stance: 'escalating' | 'stable' | 'de-escalating';
+}
+
 export interface Leader {
   id: string;
   name: string;
@@ -71,6 +85,7 @@ export interface Leader {
   isVisible: boolean;       // in the active stack
   lastActiveAt: number;
   totalMessages: number;
+  memory?: LeaderMemory;    // persistent memory across ticks
 }
 
 export interface ConflictZone {
@@ -117,6 +132,53 @@ export interface SimulationCycle {
   tensionDelta: number;
 }
 
+// ── USER BOTS ─────────────────────────────────────────────────────────────────
+export interface BotMemory {
+  pastInfluence: string[];
+  successRate: number;
+  strategiesUsed: string[];
+  lastActions: string[];
+  totalInfluenceApplied: number;
+}
+
+export interface UserBot {
+  id: string;
+  templateId: string;
+  name: string;
+  class: BotClass;
+  alignment: BotAlignment;
+  specialty: BotSpecialty;
+  influenceScore: number;
+  memory: BotMemory;
+  activeRegion: string;
+  deployedAt: number;
+  tensionModifier: number;
+  eventTypeBias: Partial<Record<EventType, number>>;
+}
+
+export interface BotInfluenceEntry {
+  id: string;
+  botId: string;
+  botName: string;
+  botClass: BotClass;
+  effect: string;
+  delta: string;
+  timestamp: number;
+  region: string;
+}
+
+// ── HISTORY LOG ──────────────────────────────────────────────────────────────
+export interface HistoryEntry {
+  id: string;
+  title: string;
+  type: EventType;
+  impact: number;
+  region: string;
+  timestamp: number;
+  cycleNumber: number;
+  tensionAtTime: number;
+}
+
 export interface WorldState {
   sessionId: string;
   globalTension: number;
@@ -141,6 +203,11 @@ export interface WorldState {
   outcomes: OutcomeScenario[];
   activeLeaderIds: string[];  // currently shown in stack
   breakingIntel: string[];
+  // Persistent memory systems
+  historyLog?: HistoryEntry[];         // last 20 major events
+  bots?: UserBot[];                    // user-deployed bots
+  botInfluenceLog?: BotInfluenceEntry[]; // recent bot effects
+  economicStress?: number;             // 0-100 cumulative economic pressure
   realWorldContext?: {
     summary: string;
     dominantTheme: string;

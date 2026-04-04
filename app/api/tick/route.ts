@@ -5,9 +5,9 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getState, applyEvent, applyResponses } from '@/lib/engine/state';
 import { SYSTEM_PROMPTS, buildUserPrompt } from '@/lib/agents/prompts';
-import { getScenarioEvent, getRandomEvent } from '@/lib/engine/events';
+import { getScenarioEvent, getRandomEvent, getRandomEventByType } from '@/lib/engine/events';
 import { getNewsContext } from '@/lib/engine/newsContext';
-import { GeoEvent } from '@/lib/engine/types';
+import { GeoEvent, EventType } from '@/lib/engine/types';
 
 // ── COOLDOWN / ROTATION TRACKING ─────────────────────────────────────────────
 // Persisted in globalThis so it survives across requests in the same process.
@@ -154,16 +154,49 @@ export async function POST() {
   // On tick 1, use the real-world seed event from news analysis if available
   const newsCtx = getNewsContext();
   const useSeed = state.tick === 0 && newsCtx?.seedEvent;
+
+  // Determine bot-biased event type (pick highest-weighted bias from deployed bots)
+  const bots = state.bots ?? [];
+  let botBiasedType: EventType | null = null;
+  if (bots.length > 0 && !useSeed) {
+    const merged: Partial<Record<EventType, number>> = {};
+    for (const bot of bots) {
+      for (const [etype, weight] of Object.entries(bot.eventTypeBias ?? {})) {
+        merged[etype as EventType] = (merged[etype as EventType] ?? 0) + (weight ?? 0);
+      }
+    }
+    const entries = Object.entries(merged).filter(([, w]) => w > 0) as [EventType, number][];
+    if (entries.length > 0) {
+      // Weighted random pick among bot-biased types
+      const total = entries.reduce((s, [, w]) => s + w, 0);
+      let r = Math.random() * total;
+      for (const [etype, w] of entries) {
+        r -= w;
+        if (r <= 0) { botBiasedType = etype; break; }
+      }
+    }
+  }
+
   const event: GeoEvent = useSeed
     ? { ...newsCtx!.seedEvent!, id: `evt_seed_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true }
-    : Math.random() < 0.6
-      ? getScenarioEvent(state.activeScenario, Math.floor(state.currentCycleNumber / 2), cycleId)
-      : getRandomEvent(cycleId);
+    : botBiasedType && Math.random() < 0.45
+      ? getRandomEventByType(botBiasedType, cycleId)
+      : Math.random() < 0.6
+        ? getScenarioEvent(state.activeScenario, Math.floor(state.currentCycleNumber / 2), cycleId)
+        : getRandomEvent(cycleId);
 
   applyEvent(event);
 
   // All valid candidates: active leaders + anyone the event specifically affects
   const candidates = Array.from(new Set([...state.activeLeaderIds, ...event.affectedLeaders]));
+
+  // Bot-aligned leaders get a presence boost (add them to candidates if not already)
+  const botAlignedLeaders = (state.bots ?? [])
+    .map(b => b.alignment)
+    .filter(a => a !== 'neutral' && a !== 'independent');
+  for (const aligned of botAlignedLeaders) {
+    if (!candidates.includes(aligned)) candidates.push(aligned);
+  }
 
   // Select a balanced subset using weighted cooldown-aware rotation
   const toQuery = selectSpeakers(candidates, event.affectedLeaders, SPEAKERS_PER_TICK);

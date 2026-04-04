@@ -12,6 +12,7 @@ import Leaderboard from '@/components/leaderboard/Leaderboard';
 import { useGame } from '@/lib/predict/GameContext';
 import { WorldState } from '@/lib/engine/types';
 import WorldBriefing from '@/components/map/WorldBriefing';
+import BotPanel from '@/components/bots/BotPanel';
 
 const SCENARIOS = [
   { id: 'global_tension',    label: 'Global Tension' },
@@ -39,6 +40,7 @@ export default function Home() {
   const [mapExpanded, setMapExpanded]   = useState(false);
   const [leftExpanded, setLeftExpanded] = useState(false);
   const [chatOpen, setChatOpen]         = useState(false);
+  const [botPanelOpen, setBotPanelOpen] = useState(false);
   const [intelExpanded, setIntelExpanded] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [simStartTime, setSimStartTime] = useState<number | null>(null);
@@ -154,6 +156,9 @@ export default function Home() {
         onClose={() => setChatOpen(false)}
       />
 
+      {/* ── Bot deployment panel ── */}
+      <BotPanel isOpen={botPanelOpen} onClose={() => setBotPanelOpen(false)} />
+
       {/* ── Header ── */}
       <header className="shrink-0 flex items-center gap-4 px-4 border-b"
         style={{ height: '68px', borderColor: 'rgba(120,60,255,0.18)', background: 'rgba(8,3,20,0.98)' }}>
@@ -207,6 +212,18 @@ export default function Home() {
         </div>
 
         <div className="flex-1" />
+
+        {/* Bot panel toggle */}
+        <button onClick={() => setBotPanelOpen(v => !v)}
+          className="hdr-btn hdr-btn-purple shrink-0 font-orbitron font-bold"
+          style={botPanelOpen ? { color: '#b44fff', borderColor: 'rgba(180,79,255,0.7)', background: 'rgba(180,79,255,0.16)', fontSize: '14px', padding: '12px 20px' } : { fontSize: '14px', padding: '12px 20px' }}>
+          🤖 AGENTS
+          {(state.bots ?? []).length > 0 && (
+            <span style={{ background: '#b44fff', color: '#000', borderRadius: '10px', padding: '0 6px', fontSize: '10px', fontWeight: 'bold', lineHeight: '16px' }}>
+              {(state.bots ?? []).length}
+            </span>
+          )}
+        </button>
 
         {/* Chat toggle */}
         <button onClick={() => setChatOpen(v => !v)}
@@ -269,7 +286,7 @@ export default function Home() {
       <main className="flex-1 flex gap-2 p-2 overflow-hidden min-h-0">
 
         {/* Left: Leader Stack */}
-\        <div className="shrink-0 overflow-hidden transition-all duration-300" style={{ width: leftExpanded ? '500px' : '310px' }}>
+        <div className="shrink-0 overflow-hidden transition-all duration-300" style={{ width: leftExpanded ? '500px' : '310px' }}>
           <LeaderStack
             leaders={state.leaders.filter(l => state.activeLeaderIds.includes(l.id))}
             activeIds={state.activeLeaderIds}

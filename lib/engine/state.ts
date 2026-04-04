@@ -2,8 +2,20 @@
 // Singleton in-memory world state. Lives on the server.
 // All API routes read/write this. SSE broadcasts changes to clients.
 
-import { WorldState, GeoEvent, LeaderMessage, OutcomeScenario, ConflictZone } from './types';
+import { WorldState, GeoEvent, LeaderMessage, OutcomeScenario, ConflictZone, LeaderMemory, UserBot, BotInfluenceEntry, HistoryEntry } from './types';
 import { LEADER_POOL, computeImportanceScores, getActiveLeaderIds } from './leaders';
+
+function makeLeaderMemory(): LeaderMemory {
+  return {
+    pastStatements: [],
+    pastActions: [],
+    aggressionDelta: 0,
+    trustLevels: {},
+    lastSpokeAt: 0,
+    totalEscalation: 0,
+    stance: 'stable',
+  };
+}
 
 // ── INITIAL STATE ─────────────────────────────────────────────────────────────
 function makeInitialState(): WorldState {
@@ -12,7 +24,7 @@ function makeInitialState(): WorldState {
     globalTension: 42,
     threatLevel: 'ELEVATED',
     nuclearRisk: 18,
-    leaders: LEADER_POOL.map(l => ({ ...l })),
+    leaders: LEADER_POOL.map(l => ({ ...l, memory: makeLeaderMemory() })),
     events: [],
     messages: [],
     cycles: [],
@@ -55,6 +67,10 @@ function makeInitialState(): WorldState {
       { id:'o4', label:'Economic Collapse', probability:12, trend:'stable', color:'#ff2d55' },
     ],
     activeLeaderIds: ['usa','china','russia','iran','israel'],
+    historyLog: [],
+    bots: [],
+    botInfluenceLog: [],
+    economicStress: 0,
     breakingIntel: [
       'SIGINT: Encrypted traffic between Moscow and Tehran surged 340% in last 6 hours',
       'HUMINT: Source confirms emergency PLA naval command meeting convened',
@@ -153,7 +169,48 @@ export function applyEvent(event: GeoEvent): void {
     return z;
   });
 
-  _setS({ ..._s(), events, indicators: ind, breakingIntel: intel, conflictZones });
+  // Append to history log (keep last 20 major events, impact >= 5)
+  const historyLog: HistoryEntry[] = _s().historyLog ?? [];
+  const newHistory = event.impact >= 5
+    ? [{ id: event.id, title: event.title, type: event.type, impact: event.impact,
+         region: event.region, timestamp: event.timestamp,
+         cycleNumber: _s().currentCycleNumber, tensionAtTime: _s().globalTension,
+       } as HistoryEntry, ...historyLog].slice(0, 20)
+    : historyLog;
+
+  // Track economic stress
+  const econStressDelta = event.type === 'economic' ? event.impact * 2
+    : event.type === 'military' && event.impact >= 7 ? event.impact * 1.2
+    : 0;
+  const economicStress = Math.min(100, (_s().economicStress ?? 0) + econStressDelta);
+
+  // Apply bot influence on indicators
+  const bots = _s().bots ?? [];
+  const botInfluenceLog: BotInfluenceEntry[] = [...(_s().botInfluenceLog ?? [])];
+  for (const bot of bots) {
+    if (bot.specialty === 'oil' && bot.class === 'economic') {
+      const delta = bot.alignment === 'neutral' ? -bot.influenceScore * 0.5 : bot.influenceScore * 0.3;
+      ind.oilPrice = Math.max(40, Math.min(400, ind.oilPrice + delta));
+      botInfluenceLog.unshift({ id: `bi_${Date.now()}_${bot.id}`, botId: bot.id, botName: bot.name,
+        botClass: bot.class, effect: `Oil price shifted ${delta > 0 ? '+' : ''}${delta.toFixed(1)}/bbl`,
+        delta: `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`, timestamp: Date.now(), region: bot.activeRegion });
+    }
+    if (bot.specialty === 'finance') {
+      const delta = bot.alignment === 'usa' ? bot.influenceScore * 8 : -bot.influenceScore * 6;
+      ind.sp500 = Math.max(1000, Math.min(8000, ind.sp500 + delta));
+      botInfluenceLog.unshift({ id: `bi_${Date.now()}_${bot.id}f`, botId: bot.id, botName: bot.name,
+        botClass: bot.class, effect: `S&P 500 shifted ${delta > 0 ? '+' : ''}${delta.toFixed(0)} pts`,
+        delta: `${delta > 0 ? '+' : ''}${delta.toFixed(0)}`, timestamp: Date.now(), region: bot.activeRegion });
+    }
+    if (bot.specialty === 'cyber' && event.type === 'cyber') {
+      const delta = bot.class === 'disruption' ? bot.influenceScore * 1.5 : -bot.influenceScore;
+      ind.sanctionsPressure = Math.min(100, Math.max(0, ind.sanctionsPressure + delta));
+    }
+  }
+
+  _setS({ ..._s(), events, indicators: ind, breakingIntel: intel, conflictZones,
+    historyLog: newHistory, economicStress,
+    botInfluenceLog: botInfluenceLog.slice(0, 30) });
 }
 
 // ── APPLY AGENT RESPONSES ─────────────────────────────────────────────────────
@@ -180,6 +237,34 @@ export function applyResponses(
     else if (newAgg >= 22) status = 'stable';
     else status = 'diplomatic';
 
+    // Update leader memory
+    const prevMem = leader.memory ?? {
+      pastStatements: [], pastActions: [], aggressionDelta: 0,
+      trustLevels: {}, lastSpokeAt: 0, totalEscalation: 0, stance: 'stable' as const,
+    };
+    const newPastStmts = [r.statement, ...prevMem.pastStatements].slice(0, 5);
+    const newPastActions = [r.action, ...prevMem.pastActions].slice(0, 5);
+    const newTotalEsc = prevMem.totalEscalation + r.escalation;
+    const aggrDeltaHistory = leader.totalMessages > 0
+      ? (prevMem.aggressionDelta * 0.7 + aggrDelta * 0.3)
+      : aggrDelta;
+    const stance = aggrDeltaHistory > 2 ? 'escalating' : aggrDeltaHistory < -2 ? 'de-escalating' : 'stable';
+
+    // Update trust levels: leader responding to another leader's event
+    const updatedTrust = { ...prevMem.trustLevels };
+    const target = r.to !== 'ALL' ? state.leaders.find(l => l.name === r.to || l.id === r.to) : null;
+    if (target) {
+      const prevTrust = updatedTrust[target.id] ?? 0;
+      const trustDelta = r.tone === 'diplomatic' ? 5 : r.tone === 'threatening' || r.tone === 'aggressive' ? -8 : 0;
+      updatedTrust[target.id] = Math.max(-100, Math.min(100, prevTrust + trustDelta));
+    }
+    // Also update trust with event-affected parties
+    for (const affectedId of triggerEvent.affectedLeaders.filter(id => id !== leader.id)) {
+      const prevTrust = updatedTrust[affectedId] ?? 0;
+      const trustDelta = r.escalation >= 7 ? -6 : r.escalation <= 3 ? 3 : 0;
+      updatedTrust[affectedId] = Math.max(-100, Math.min(100, prevTrust + trustDelta));
+    }
+
     const updatedLeaders = [...state.leaders];
     updatedLeaders[leaderIdx] = {
       ...leader,
@@ -189,6 +274,15 @@ export function applyResponses(
       lastAction: r.action,
       lastActiveAt: Date.now(),
       totalMessages: leader.totalMessages + 1,
+      memory: {
+        pastStatements: newPastStmts,
+        pastActions: newPastActions,
+        aggressionDelta: Math.round(aggrDeltaHistory * 10) / 10,
+        trustLevels: updatedTrust,
+        lastSpokeAt: Date.now(),
+        totalEscalation: newTotalEsc,
+        stance,
+      },
     };
     state = { ...state, leaders: updatedLeaders };
 
@@ -216,9 +310,25 @@ export function applyResponses(
   const activeLeaderIds = getActiveLeaderIds(reranked, 5);
 
   // Update outcomes
-  const tension = recalcTension();
-  const outcomes = updateOutcomes(state.outcomes, tension, triggerEvent);
+  let tension = recalcTension();
 
+  // Apply bot tension modifiers
+  const bots = (state.bots ?? []) as import('./types').UserBot[];
+  for (const bot of bots) {
+    tension = Math.max(0, Math.min(100, tension + bot.tensionModifier));
+    // Adaptive: if economic stress is high, diplomatic bots dampen tension
+    const eStress = state.economicStress ?? 0;
+    if (bot.class === 'diplomatic' && eStress > 50) {
+      tension = Math.max(0, tension - bot.influenceScore * 0.5);
+    }
+    // Disruption bots amplify tension when aggression is high
+    if (bot.class === 'disruption' && tension > 60) {
+      tension = Math.min(100, tension + bot.influenceScore * 0.3);
+    }
+  }
+  tension = Math.round(tension);
+
+  const outcomes = updateOutcomes(state.outcomes, tension, triggerEvent);
   const allMessages = [...newMessages, ...state.messages].slice(0, 300);
 
   _setS({
@@ -322,4 +432,37 @@ export function resetSim() {
 export function setScenario(id: string) {
   _setS({ ..._s(), activeScenario: id });
   broadcast();
+}
+
+// ── BOT MANAGEMENT ────────────────────────────────────────────────────────────
+export function deployBot(bot: import('./types').UserBot) {
+  const bots = [...(_s().bots ?? [])].filter(b => b.id !== bot.id);
+  _setS({ ..._s(), bots: [...bots, bot] });
+  broadcast();
+}
+
+export function removeBot(botId: string) {
+  const bots = (_s().bots ?? []).filter(b => b.id !== botId);
+  _setS({ ..._s(), bots });
+  broadcast();
+}
+
+export function updateBotMemory(botId: string, influenceDesc: string, success: boolean) {
+  const bots = (_s().bots ?? []).map(b => {
+    if (b.id !== botId) return b;
+    const prevMem = b.memory;
+    const newActions = [influenceDesc, ...prevMem.lastActions].slice(0, 5);
+    const newInfluences = [influenceDesc, ...prevMem.pastInfluence].slice(0, 10);
+    const totalOps = prevMem.totalInfluenceApplied + 1;
+    const wins = success ? (prevMem.successRate / 100) * (totalOps - 1) + 1 : (prevMem.successRate / 100) * (totalOps - 1);
+    return { ...b, memory: {
+      ...prevMem,
+      lastActions: newActions,
+      pastInfluence: newInfluences,
+      totalInfluenceApplied: totalOps,
+      successRate: Math.round((wins / totalOps) * 100),
+      strategiesUsed: Array.from(new Set([b.class, ...prevMem.strategiesUsed])).slice(0, 8),
+    }};
+  });
+  _setS({ ..._s(), bots });
 }
