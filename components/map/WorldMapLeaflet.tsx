@@ -88,6 +88,10 @@ interface MapUnit {
   originLabel:string; progress:number; color:string; speed:number; exploding:boolean;
 }
 interface Arc { id:string; from:[number,number]; to:[number,number]; color:string; }
+interface StrikeRecord {
+  id:string; title:string; origin:string; target:string;
+  type:string; impact:number; timestamp:number; color:string;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function lerp(a:number,b:number,t:number){ return a+(b-a)*t; }
@@ -386,7 +390,7 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
           return(
             <g key={`nav_${leader.id}_${i}`}
               style={{cursor:'pointer',pointerEvents:'all'}}
-              onMouseEnter={e=>setHoveredVessel({label,x:bx,y:by})}
+              onMouseEnter={()=>setHoveredVessel({label,x:bx,y:by})}
               onMouseLeave={()=>setHoveredVessel(null)}>
               {/* Sonar ping */}
               <circle cx={bx} cy={by} r={r} fill="none" stroke={lc} strokeWidth={1} opacity={0}>
@@ -462,6 +466,9 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const [leafletMap, setLeafletMap] = useState<L.Map|null>(null);
   const [mousePos, setMousePos] = useState({x:0,y:0});
   const [hoveredCity] = useState<string|null>(null);
+  const [strikeLog, setStrikeLog] = useState<StrikeRecord[]>([]);
+  const [strikeReportOpen, setStrikeReportOpen] = useState(false);
+  const [isShaking, setIsShaking] = useState(false);
 
   type CinPhase = 'alert'|'zoom'|'missile'|'impact'|'shockwave'|'report'|'done';
   const [cinematic, setCinematic] = useState<{
@@ -498,16 +505,10 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       zoomSnap: 0.5,
     });
 
-    // CartoDB Voyager — colorful terrain, vivid blue oceans, clear country borders
+    // ESRI World Topo Map — terrain relief, mountains, vivid colors (free, no API key)
     L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
-      { attribution: '© CARTO', maxZoom: 18, subdomains: 'abcd' }
-    ).addTo(map);
-
-    // Labels layer on top (city names, country borders)
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
-      { attribution: '© CARTO', maxZoom: 18, opacity: 0.8, subdomains: 'abcd' }
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+      { attribution: '© Esri', maxZoom: 18 }
     ).addTo(map);
 
     const onMove = () => setMapVersion(v => v + 1);
@@ -556,6 +557,16 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     const color=TYPE_COLORS[ev.type]||'#00f5ff';
     playSound(ev.type==='nuclear'?'nuclear':cfg.kind==='submarine'?'sonar':cfg.kind==='naval'?'naval':cfg.kind==='missile'?'missile':'jet', ev.impact, audioCtxRef);
 
+    // Log strikes to the Strike Report
+    if(ev.impact>=6){
+      setStrikeLog(prev=>[{
+        id:ev.id, title:ev.title,
+        origin:LEADER_NAMES[ev.affectedLeaders[0]]||ev.region,
+        target:LEADER_NAMES[ev.affectedLeaders[1]]||ev.region||'UNKNOWN',
+        type:ev.type, impact:ev.impact, timestamp:Date.now(), color,
+      },...prev].slice(0,50));
+    }
+
     // ── Cinematic (impact >= 9 only, no concurrent) ──
     const isMajorStrike = ev.impact>=9 && (ev.type==='military'||ev.type==='nuclear') && !cinematicActiveRef.current;
     if(isMajorStrike){
@@ -592,7 +603,11 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'zoom'})),2200));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'missile'})),4800));
-      cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'impact'})),8000));
+      cinematicRef.current.push(setTimeout(()=>{
+        setCinematic(p=>({...p,phase:'impact'}));
+        setIsShaking(true);
+        setTimeout(()=>setIsShaking(false),900);
+      },8000));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'shockwave'})),9200));
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'report'})),11500));
       cinematicRef.current.push(setTimeout(()=>{
@@ -678,6 +693,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     <div
       ref={mapDivRef}
       className="w-full h-full relative overflow-hidden"
+      style={isShaking ? {animation:'cam-shake 0.9s ease-in-out'} : undefined}
       onMouseMove={e=>{
         if(!mapDivRef.current) return;
         const r=mapDivRef.current.getBoundingClientRect();
@@ -704,6 +720,27 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         }
         @keyframes border-glow-pulse {
           0%,100%{ opacity:0.55 } 50%{ opacity:1 }
+        }
+        @keyframes cam-shake {
+          0%,100%{transform:translate(0,0) rotate(0deg)}
+          10%{transform:translate(-7px,-4px) rotate(-0.3deg)}
+          20%{transform:translate(6px,5px) rotate(0.2deg)}
+          30%{transform:translate(-5px,6px) rotate(-0.2deg)}
+          40%{transform:translate(7px,-4px) rotate(0.3deg)}
+          50%{transform:translate(-6px,5px) rotate(-0.1deg)}
+          60%{transform:translate(5px,-6px) rotate(0.2deg)}
+          70%{transform:translate(-4px,4px) rotate(-0.1deg)}
+          80%{transform:translate(6px,-3px) rotate(0.1deg)}
+          90%{transform:translate(-3px,2px) rotate(0deg)}
+        }
+        @keyframes reticle-spin {
+          0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)}
+        }
+        @keyframes reticle-pulse {
+          0%,100%{opacity:0.9;transform:scale(1)} 50%{opacity:0.4;transform:scale(1.08)}
+        }
+        @keyframes sat-scan {
+          0%{stroke-dashoffset:400} 100%{stroke-dashoffset:0}
         }
         @keyframes data-stream {
           0%{ stroke-dashoffset: 400 }
@@ -837,19 +874,47 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
           {cinematic.phase==='alert'&&(
             <>
-              <div className="absolute inset-0 impact-flash" style={{background:`${cinematic.color}28`,zIndex:701}}/>
-              <div className="absolute inset-0 flex flex-col items-center justify-center" style={{zIndex:702}}>
+              <div className="absolute inset-0 impact-flash" style={{background:`${cinematic.color}22`,zIndex:701}}/>
+              {/* Satellite targeting reticle */}
+              <svg className="absolute inset-0" style={{zIndex:702,pointerEvents:'none'}}
+                viewBox={`0 0 ${cinematic.cinW} ${cinematic.cinH}`} preserveAspectRatio="xMidYMid meet">
+                {/* Spinning outer ring */}
+                <circle cx={cinematic.tx} cy={cinematic.ty} r="70" fill="none" stroke={cinematic.color}
+                  strokeWidth="1" strokeDasharray="12,8" opacity="0.7"
+                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-spin 3s linear infinite'}}/>
+                {/* Pulsing middle ring */}
+                <circle cx={cinematic.tx} cy={cinematic.ty} r="44" fill="none" stroke={cinematic.color}
+                  strokeWidth="1.5" opacity="0.8"
+                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-pulse 1s ease-in-out infinite'}}/>
+                {/* Inner dot */}
+                <circle cx={cinematic.tx} cy={cinematic.ty} r="6" fill={cinematic.color} opacity="0.9"
+                  style={{filter:`drop-shadow(0 0 8px ${cinematic.color})`}}/>
+                {/* Crosshair lines */}
+                <line x1={cinematic.tx-90} y1={cinematic.ty} x2={cinematic.tx-50} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
+                <line x1={cinematic.tx+50} y1={cinematic.ty} x2={cinematic.tx+90} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
+                <line x1={cinematic.tx} y1={cinematic.ty-90} x2={cinematic.tx} y2={cinematic.ty-50} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
+                <line x1={cinematic.tx} y1={cinematic.ty+50} x2={cinematic.tx} y2={cinematic.ty+90} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center" style={{zIndex:703}}>
+                <div className="font-mono mb-3 px-4 py-1 rounded" style={{
+                  background:`${cinematic.color}18`,border:`1px solid ${cinematic.color}50`,
+                  color:`${cinematic.color}cc`,fontSize:'10px',letterSpacing:'0.25em'}}>
+                  SATELLITE LOCK-ON ACQUIRED · TARGET CONFIRMED
+                </div>
                 <div className="font-orbitron font-black alert-pulse text-center px-10 py-7 rounded-2xl"
-                  style={{background:'rgba(0,0,0,0.92)',border:`2px solid ${cinematic.color}`,
+                  style={{background:'rgba(0,0,0,0.95)',border:`2px solid ${cinematic.color}`,
                     boxShadow:`0 0 60px ${cinematic.color}60,inset 0 0 40px ${cinematic.color}10`,
                     letterSpacing:'0.3em',fontSize:'clamp(18px,3vw,32px)',color:cinematic.color,
                     textShadow:`0 0 30px ${cinematic.color}`}}>
-                  {cinematic.eventType==='nuclear'?'☢ NUCLEAR LAUNCH DETECTED':'⚠ STRIKE EVENT DETECTED'}
+                  {cinematic.eventType==='nuclear'?'☢ NUCLEAR LAUNCH DETECTED':'⚡ MISSILE LAUNCH DETECTED'}
                 </div>
                 <div className="font-mono mt-4 px-6 py-2 rounded-lg"
-                  style={{background:'rgba(0,0,0,0.8)',border:`1px solid ${cinematic.color}40`,
-                    color:'rgba(255,255,255,0.8)',fontSize:'13px',letterSpacing:'0.1em'}}>
+                  style={{background:'rgba(0,0,0,0.85)',border:`1px solid ${cinematic.color}40`,
+                    color:'rgba(255,255,255,0.85)',fontSize:'13px',letterSpacing:'0.08em'}}>
                   {cinematic.label}
+                </div>
+                <div className="font-mono mt-2" style={{color:`${cinematic.color}80`,fontSize:'10px',letterSpacing:'0.2em'}}>
+                  {cinematic.originLabel} → {cinematic.targetLabel}
                 </div>
               </div>
             </>
@@ -862,16 +927,47 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           )}
 
           {cinematic.phase==='zoom'&&(
-            <div className="absolute left-1/2 top-14" style={{transform:'translateX(-50%)',zIndex:703,
-              background:'rgba(0,0,0,0.9)',border:`1px solid ${cinematic.color}70`,borderRadius:'8px',
-              padding:'8px 20px',backdropFilter:'blur(14px)',boxShadow:`0 0 24px ${cinematic.color}25`,whiteSpace:'nowrap'}}>
-              <div className="font-orbitron font-bold text-center" style={{color:cinematic.color,fontSize:'12px',letterSpacing:'0.2em'}}>
-                TRACKING TARGET — {cinematic.originLabel} → {cinematic.targetLabel}
+            <>
+              {/* Satellite Feed Active banner */}
+              <div className="absolute top-12 left-1/2" style={{transform:'translateX(-50%)',zIndex:703,
+                background:'rgba(0,0,0,0.95)',border:`1px solid ${cinematic.color}80`,borderRadius:'8px',
+                padding:'10px 28px',backdropFilter:'blur(16px)',boxShadow:`0 0 30px ${cinematic.color}30`,whiteSpace:'nowrap'}}>
+                <div className="font-orbitron font-bold text-center" style={{color:cinematic.color,fontSize:'11px',letterSpacing:'0.28em'}}>
+                  <span style={{marginRight:'8px',animation:'reticle-pulse 0.8s ease-in-out infinite',display:'inline-block'}}>◉</span>
+                  SATELLITE FEED ACTIVE
+                </div>
+                <div className="font-mono text-center mt-1" style={{color:'rgba(255,255,255,0.6)',fontSize:'10px',letterSpacing:'0.12em'}}>
+                  TRACKING: {cinematic.originLabel} → {cinematic.targetLabel}
+                </div>
               </div>
-              <div className="font-mono text-center mt-0.5" style={{color:'rgba(255,255,255,0.55)',fontSize:'10px'}}>
-                {cinematic.label}
-              </div>
-            </div>
+              {/* Targeting reticle over target */}
+              <svg className="absolute inset-0" style={{zIndex:702,pointerEvents:'none'}}
+                viewBox={`0 0 ${cinematic.cinW} ${cinematic.cinH}`} preserveAspectRatio="xMidYMid meet">
+                {/* Scanning arc */}
+                <circle cx={cinematic.tx} cy={cinematic.ty} r="100" fill="none" stroke={cinematic.color}
+                  strokeWidth="1" strokeDasharray="16,10" opacity="0.5"
+                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-spin 4s linear infinite'}}/>
+                <circle cx={cinematic.tx} cy={cinematic.ty} r="60" fill="none" stroke={cinematic.color}
+                  strokeWidth="1.5" strokeDasharray="6,6" opacity="0.7"
+                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-spin 2s linear infinite reverse'}}/>
+                <circle cx={cinematic.tx} cy={cinematic.ty} r="30" fill="none" stroke={cinematic.color}
+                  strokeWidth="2" opacity="0.8" style={{animation:'reticle-pulse 1s ease-in-out infinite'}}/>
+                <circle cx={cinematic.tx} cy={cinematic.ty} r="5" fill={cinematic.color} opacity="1"
+                  style={{filter:`drop-shadow(0 0 10px ${cinematic.color})`}}/>
+                {/* Corner brackets */}
+                {[[-1,-1],[1,-1],[-1,1],[1,1]].map(([sx,sy],_i)=>(
+                  <g key={_i}>
+                    <line x1={cinematic.tx+sx*35} y1={cinematic.ty+sy*25} x2={cinematic.tx+sx*20} y2={cinematic.ty+sy*25} stroke={cinematic.color} strokeWidth="2" opacity="0.9"/>
+                    <line x1={cinematic.tx+sx*35} y1={cinematic.ty+sy*25} x2={cinematic.tx+sx*35} y2={cinematic.ty+sy*10} stroke={cinematic.color} strokeWidth="2" opacity="0.9"/>
+                  </g>
+                ))}
+                {/* Data readout */}
+                <text x={cinematic.tx+40} y={cinematic.ty+80} fill={cinematic.color} fontSize="10"
+                  fontFamily="Share Tech Mono" opacity="0.75">
+                  {`LAT: ${(cinematic.ty/cinematic.cinH*180-90).toFixed(2)}° · LON: ${(cinematic.tx/cinematic.cinW*360-180).toFixed(2)}°`}
+                </text>
+              </svg>
+            </>
           )}
 
           {cinematic.phase==='missile'&&(
@@ -926,16 +1022,37 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           )}
 
           {cinematic.phase==='shockwave'&&(
-            <div className="absolute flex items-center justify-center pointer-events-none" style={{
-              zIndex:702,left:cinematic.tx-300,top:cinematic.ty-300,width:600,height:600}}>
-              {[0,1,2,3].map(i=>(
-                <div key={i} className="absolute rounded-full" style={{
-                  width:`${120+i*220}px`,height:`${120+i*220}px`,
-                  border:`${i===0?'3px':'1.5px'} solid ${cinematic.color}`,
-                  animation:`shockwave-ring ${1.4+i*0.35}s ${i*0.2}s cubic-bezier(0,0,0.2,1) forwards`,
-                  opacity:0,boxShadow:`0 0 20px ${cinematic.color}60`}}/>
-              ))}
-            </div>
+            <>
+              {/* Shockwave rings */}
+              <div className="absolute flex items-center justify-center pointer-events-none" style={{
+                zIndex:702,left:cinematic.tx-300,top:cinematic.ty-300,width:600,height:600}}>
+                {[0,1,2,3].map(i=>(
+                  <div key={i} className="absolute rounded-full" style={{
+                    width:`${120+i*220}px`,height:`${120+i*220}px`,
+                    border:`${i===0?'3px':'1.5px'} solid ${cinematic.color}`,
+                    animation:`shockwave-ring ${1.4+i*0.35}s ${i*0.2}s cubic-bezier(0,0,0.2,1) forwards`,
+                    opacity:0,boxShadow:`0 0 20px ${cinematic.color}60`}}/>
+                ))}
+                {/* Heat zone */}
+                <div className="absolute rounded-full" style={{
+                  width:'160px',height:'160px',
+                  background:`radial-gradient(circle,${cinematic.color}55 0%,${cinematic.color}20 50%,transparent 70%)`,
+                  animation:'reticle-pulse 0.6s ease-in-out infinite',
+                }}/>
+              </div>
+              {/* TACTICAL REPLAY banner */}
+              <div className="absolute top-10 left-1/2" style={{transform:'translateX(-50%)',zIndex:704,
+                background:'rgba(0,0,0,0.96)',border:`1px solid ${cinematic.color}60`,borderRadius:'6px',
+                padding:'8px 24px',backdropFilter:'blur(14px)',whiteSpace:'nowrap',
+                boxShadow:`0 0 20px ${cinematic.color}25`}}>
+                <div className="font-orbitron font-bold text-center" style={{color:cinematic.color,fontSize:'10px',letterSpacing:'0.3em'}}>
+                  ▶ SIMULATION FEED · TACTICAL REPLAY
+                </div>
+                <div className="font-mono text-center mt-1" style={{color:'rgba(255,255,255,0.5)',fontSize:'9px',letterSpacing:'0.15em'}}>
+                  {new Date().toUTCString().slice(0,25).toUpperCase()} UTC · {cinematic.targetLabel}
+                </div>
+              </div>
+            </>
           )}
 
           {cinematic.phase==='report'&&(
@@ -996,27 +1113,97 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         </div>
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{
-        zIndex:600,
-        background:'linear-gradient(to top, rgba(0,2,12,0.92) 0%, transparent 100%)',
+      {/* ── Strike Report Panel (slide up) ── */}
+      <div style={{
+        position:'absolute',bottom:'32px',left:0,right:0,zIndex:610,
+        maxHeight: strikeReportOpen ? '340px' : '0px',
+        overflow:'hidden',
+        transition:'max-height 0.35s cubic-bezier(0.4,0,0.2,1)',
+        background:'rgba(2,1,14,0.98)',
+        borderTop: strikeReportOpen ? '1px solid rgba(255,45,85,0.3)' : 'none',
+        backdropFilter:'blur(16px)',
+        boxShadow: strikeReportOpen ? '0 -12px 40px rgba(0,0,0,0.7)' : 'none',
+      }}>
+        <div style={{maxHeight:'340px',overflowY:'auto',padding:'12px 16px'}}>
+          {/* Panel header */}
+          <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'10px',paddingBottom:'8px',borderBottom:'1px solid rgba(255,45,85,0.2)'}}>
+            <span className="status-blink" style={{display:'inline-block',width:'7px',height:'7px',borderRadius:'50%',background:'#ff2d55',boxShadow:'0 0 8px #ff2d55'}}/>
+            <span className="font-orbitron font-bold" style={{color:'#ff2d55',fontSize:'11px',letterSpacing:'0.22em'}}>STRIKE REPORT</span>
+            <span className="font-mono" style={{marginLeft:'auto',color:'rgba(255,45,85,0.5)',fontSize:'10px'}}>{strikeLog.length} EVENTS</span>
+          </div>
+          {strikeLog.length===0&&(
+            <div className="font-mono" style={{color:'rgba(255,255,255,0.2)',fontSize:'11px',textAlign:'center',padding:'20px 0'}}>
+              NO STRIKES RECORDED — AWAITING SIMULATION
+            </div>
+          )}
+          <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+            {strikeLog.map((s,i)=>{
+              const ec=s.impact>=9?'#ff2d55':s.impact>=7?'#ff6a00':s.impact>=5?'#ffd700':'#00ff9d';
+              return(
+                <div key={s.id} style={{
+                  display:'flex',alignItems:'flex-start',gap:'10px',
+                  padding:'8px 12px',borderRadius:'6px',
+                  background:`${s.color}08`,border:`1px solid ${s.color}25`,
+                }}>
+                  <span className="font-orbitron font-bold" style={{color:ec,fontSize:'15px',flexShrink:0,lineHeight:'1.2'}}>{s.impact}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="font-mono" style={{color:'rgba(255,255,255,0.9)',fontSize:'11px',lineHeight:'1.4',
+                      overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</div>
+                    <div className="font-mono" style={{color:'rgba(200,210,240,0.5)',fontSize:'10px',marginTop:'2px'}}>
+                      {s.origin} → {s.target} · {s.type.toUpperCase()} · {new Date(s.timestamp).toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+                    </div>
+                  </div>
+                  <span className="font-orbitron" style={{color:s.color,fontSize:'8px',letterSpacing:'0.1em',
+                    background:`${s.color}15`,padding:'2px 6px',borderRadius:'3px',border:`1px solid ${s.color}30`,flexShrink:0}}>
+                    {s.type.toUpperCase()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom HUD ── */}
+      <div className="absolute bottom-0 left-0 right-0" style={{
+        zIndex:611,
+        background:'linear-gradient(to top, rgba(0,2,12,0.95) 0%, rgba(0,2,12,0.8) 100%)',
         borderTop:'1px solid rgba(0,200,255,0.15)',
-        padding:'5px 14px',display:'flex',alignItems:'center',gap:'16px'}}>
-        <div className="font-mono" style={{color:'rgba(0,200,255,0.55)',fontSize:'9px',letterSpacing:'0.18em'}}>
+        padding:'4px 14px',display:'flex',alignItems:'center',gap:'12px'}}>
+        <div className="font-mono" style={{color:'rgba(0,200,255,0.55)',fontSize:'9px',letterSpacing:'0.18em',pointerEvents:'none'}}>
           <span className="status-blink" style={{marginRight:'6px',color:'rgba(0,200,255,0.7)'}}>⬤</span>
           TACTICAL GRID ACTIVE
         </div>
-        <div style={{flex:1,height:'1px',background:'linear-gradient(90deg,rgba(0,200,255,0.2),transparent)'}}/>
-        <div className="font-mono" style={{color:`${tc}`,fontSize:'9px',letterSpacing:'0.14em'}}>
+        <div style={{flex:1,height:'1px',background:'linear-gradient(90deg,rgba(0,200,255,0.2),transparent)',pointerEvents:'none'}}/>
+        {/* Strike Report toggle button */}
+        <button onClick={()=>setStrikeReportOpen(v=>!v)}
+          style={{
+            fontFamily:'Share Tech Mono, monospace',fontSize:'9px',letterSpacing:'0.18em',
+            color: strikeReportOpen ? '#ff2d55' : 'rgba(255,45,85,0.65)',
+            background: strikeReportOpen ? 'rgba(255,45,85,0.15)' : 'rgba(255,45,85,0.05)',
+            border:`1px solid ${strikeReportOpen?'rgba(255,45,85,0.5)':'rgba(255,45,85,0.2)'}`,
+            borderRadius:'4px',padding:'3px 10px',cursor:'pointer',transition:'all 0.2s',
+            display:'flex',alignItems:'center',gap:'5px',
+          }}>
+          {strikeReportOpen?'▼':'▲'} STRIKE REPORT
+          {strikeLog.length>0&&(
+            <span style={{
+              background:'#ff2d55',color:'white',borderRadius:'10px',
+              padding:'0 5px',fontSize:'8px',lineHeight:'14px',
+            }}>{strikeLog.length}</span>
+          )}
+        </button>
+        <div className="font-mono" style={{color:`${tc}`,fontSize:'9px',letterSpacing:'0.14em',pointerEvents:'none'}}>
           TENSION <span style={{fontWeight:'bold'}}>{tension}</span>/100
         </div>
-        <div style={{width:'80px',height:'3px',background:'rgba(255,255,255,0.08)',borderRadius:'2px',overflow:'hidden'}}>
+        <div style={{width:'80px',height:'3px',background:'rgba(255,255,255,0.08)',borderRadius:'2px',overflow:'hidden',pointerEvents:'none'}}>
           <div style={{width:`${tension}%`,height:'100%',background:`linear-gradient(90deg,#00ff9d,${tc})`,boxShadow:`0 0 6px ${tc}`}}/>
         </div>
-        <div className="font-mono" style={{color:'rgba(255,255,255,0.3)',fontSize:'9px',letterSpacing:'0.12em'}}>
+        <div className="font-mono" style={{color:'rgba(255,255,255,0.3)',fontSize:'9px',letterSpacing:'0.12em',pointerEvents:'none'}}>
           ZONES: {conflictZones.length}
         </div>
-        <div style={{flex:1,height:'1px',background:'linear-gradient(90deg,transparent,rgba(0,200,255,0.2))'}}/>
-        <div className="font-mono" style={{color:'rgba(0,200,255,0.3)',fontSize:'9px',letterSpacing:'0.12em'}}>
+        <div style={{flex:1,height:'1px',background:'linear-gradient(90deg,transparent,rgba(0,200,255,0.2))',pointerEvents:'none'}}/>
+        <div className="font-mono" style={{color:'rgba(0,200,255,0.3)',fontSize:'9px',letterSpacing:'0.12em',pointerEvents:'none'}}>
           GEOWARS MATRIX · LIVE INTELLIGENCE
         </div>
       </div>
