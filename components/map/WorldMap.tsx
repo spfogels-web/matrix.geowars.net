@@ -92,6 +92,25 @@ const COUNTRY_LABELS: [string, number, number][] = [
   ['AUSTRALIA',134,-25],['SOUTH AFRICA',25,-29],['EGYPT',30,26],['NIGERIA',8,10],
 ];
 
+// City → Country lookup for hover tooltips
+const CITY_COUNTRY: Record<string, string> = {
+  'Washington D.C.':'United States','New York':'United States','Los Angeles':'United States',
+  'Chicago':'United States','Houston':'United States','Miami':'United States',
+  'London':'United Kingdom','Paris':'France','Berlin':'Germany','Rome':'Italy',
+  'Madrid':'Spain','Warsaw':'Poland','Kyiv':'Ukraine','Moscow':'Russia',
+  'St. Petersburg':'Russia','Beijing':'China','Shanghai':'China','Hong Kong':'China',
+  'Tokyo':'Japan','Osaka':'Japan','Seoul':'South Korea','Pyongyang':'North Korea',
+  'Tehran':'Iran','Baghdad':'Iraq','Jerusalem':'Israel','Tel Aviv':'Israel',
+  'Beirut':'Lebanon','Damascus':'Syria','Riyadh':'Saudi Arabia','Dubai':'UAE',
+  'Kabul':'Afghanistan','Islamabad':'Pakistan','Karachi':'Pakistan',
+  'New Delhi':'India','Mumbai':'India','Ankara':'Turkey','Istanbul':'Turkey',
+  'Taipei':'Taiwan','Bangkok':'Thailand','Singapore':'Singapore',
+  'Jakarta':'Indonesia','Manila':'Philippines','Hanoi':'Vietnam',
+  'Sydney':'Australia','Canberra':'Australia','Cairo':'Egypt',
+  'Lagos':'Nigeria','Johannesburg':'South Africa','Nairobi':'Kenya',
+  'Addis Ababa':'Ethiopia',
+};
+
 // ISO 3166-1 numeric → display name (for hover tooltip)
 const ISO_NAMES: Record<string, string> = {
   '004':'Afghanistan','008':'Albania','012':'Algeria','024':'Angola','032':'Argentina',
@@ -312,6 +331,7 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
     ox:20,oy:45,tx:75,ty:40,casualties:''});
   const cinematicRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [hoveredCountry, setHoveredCountry] = useState<string|null>(null);
+  const [hoveredCity, setHoveredCity] = useState<string|null>(null);
   const [mousePos, setMousePos]     = useState<{x:number;y:number}>({x:0,y:0});
   const [zoom, setZoom]             = useState(1);
   const [center, setCenter]         = useState<[number,number]>([10,25]);
@@ -837,37 +857,38 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
             </Marker>
           ))}
 
-          {/* ── Major cities ── */}
+          {/* ── Major cities — dots only, hover tooltip ── */}
           {CITIES.map(city=>{
-            const showLabel = zoom >= (city.dc ? 0.5 : city.capital ? 0.7 : 1.2);
-            const dotR   = city.dc ? 2.4/zoom : city.capital ? 1.7/zoom : 1.2/zoom;
+            const dotR     = city.dc ? 2.4/zoom : city.capital ? 1.7/zoom : 1.2/zoom;
             const dotColor = city.dc ? '#ffd700' : city.capital ? '#00f5ff' : 'rgba(100,220,255,0.7)';
-            const labelFs  = `${city.dc ? 5.5 : city.capital ? 4.5 : 3.8}px`;
+            const country  = CITY_COUNTRY[city.name] || '';
+            const tipLabel = country ? `${city.name} · ${country}` : city.name;
             return(
               <Marker key={city.name} coordinates={city.coords}>
-                <g>
-                  {/* Glow ring for capitals */}
+                <g
+                  style={{cursor:'crosshair'}}
+                  onMouseEnter={()=>setHoveredCity(tipLabel)}
+                  onMouseLeave={()=>setHoveredCity(null)}>
                   {city.capital&&(
                     <circle r={dotR*2.8} fill="none" stroke={dotColor} strokeWidth={0.5/zoom} opacity={0.35}/>
                   )}
-                  {/* DC special pulse */}
                   {city.dc&&(
                     <circle r={0} fill="none" stroke="#ffd700" strokeWidth={0.6/zoom} opacity={0}>
                       <animate attributeName="r" values={`${dotR};${dotR*6}`} dur="2.2s" repeatCount="indefinite"/>
                       <animate attributeName="opacity" values="0.7;0" dur="2.2s" repeatCount="indefinite"/>
                     </circle>
                   )}
+                  {/* Invisible hit area so small dots are easy to hover */}
+                  <circle r={Math.max(dotR*3, 6/zoom)} fill="transparent"/>
                   <circle r={dotR} fill={dotColor} opacity={city.dc?1:0.9}
                     style={{filter:`drop-shadow(0 0 ${2/zoom}px ${dotColor})`}}/>
-                  {showLabel&&(
+                  {/* DC always shows label */}
+                  {city.dc&&(
                     <text textAnchor="middle" y={-(dotR+1.5/zoom)}
-                      style={{
-                        fontFamily:'"Share Tech Mono",monospace', fontSize:labelFs,
-                        fill:dotColor, pointerEvents:'none', userSelect:'none',
-                        fontWeight: city.dc||city.capital ? 'bold' : 'normal',
-                        paintOrder:'stroke', stroke:'rgba(0,0,0,0.95)', strokeWidth:`${1.8/zoom}px`,
-                      }}>
-                      {city.name}
+                      style={{fontFamily:'"Share Tech Mono",monospace',fontSize:`${5/zoom}px`,
+                        fill:'#ffd700',pointerEvents:'none',userSelect:'none',fontWeight:'bold',
+                        paintOrder:'stroke',stroke:'rgba(0,0,0,0.95)',strokeWidth:`${1.5/zoom}px`}}>
+                      WASHINGTON D.C.
                     </text>
                   )}
                 </g>
@@ -1128,8 +1149,29 @@ export default function WorldMap({ conflictZones, events, tension, isRunning, le
       {/* Crisis log — bottom left */}
       <CrisisLog events={events} />
 
+      {/* City hover tooltip */}
+      {hoveredCity && (
+        <div className="absolute pointer-events-none z-30 font-mono"
+          style={{
+            left: Math.min(mousePos.x + 14, (mapDivRef.current?.clientWidth ?? 800) - 220),
+            top: Math.max(mousePos.y - 38, 8),
+            background: 'rgba(4,2,14,0.95)',
+            border: '1px solid rgba(255,215,0,0.5)',
+            borderRadius: '6px',
+            padding: '5px 10px',
+            fontSize: '11px',
+            color: '#ffd700',
+            letterSpacing: '0.1em',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 0 16px rgba(255,215,0,0.15)',
+          }}>
+          <span style={{color:'rgba(255,215,0,0.5)', marginRight:'6px'}}>◆</span>
+          {hoveredCity.toUpperCase()}
+        </div>
+      )}
+
       {/* Country hover tooltip */}
-      {hoveredCountry && (
+      {hoveredCountry && !hoveredCity && (
         <div className="absolute pointer-events-none z-30 font-mono"
           style={{
             left: Math.min(mousePos.x + 12, (mapDivRef.current?.clientWidth ?? 800) - 160),
