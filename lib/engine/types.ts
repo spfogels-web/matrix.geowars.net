@@ -208,6 +208,7 @@ export interface WorldState {
   bots?: UserBot[];                    // user-deployed bots
   botInfluenceLog?: BotInfluenceEntry[]; // recent bot effects
   economicStress?: number;             // 0-100 cumulative economic pressure
+  cumulativeDeaths?: number;           // total simulation casualties
   realWorldContext?: {
     summary: string;
     dominantTheme: string;

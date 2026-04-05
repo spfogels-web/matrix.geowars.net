@@ -442,6 +442,139 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
   );
 }
 
+// ── Death Toll Counter ────────────────────────────────────────────────────────
+function DeathTollCounter({ deaths, isRunning, color }: { deaths: number; isRunning: boolean; color: string }) {
+  const [displayed, setDisplayed] = useState(0);
+  const [flash, setFlash] = useState(false);
+  const prevRef = useRef(0);
+
+  useEffect(() => {
+    if (deaths === prevRef.current) return;
+    const delta = deaths - prevRef.current;
+    prevRef.current = deaths;
+    setFlash(true);
+    setTimeout(() => setFlash(false), 700);
+    // Animate count up over ~600ms
+    const steps = 24;
+    const stepSize = delta / steps;
+    let i = 0;
+    const interval = setInterval(() => {
+      i++;
+      setDisplayed(prev => Math.round(prev + stepSize));
+      if (i >= steps) clearInterval(interval);
+    }, 25);
+    return () => clearInterval(interval);
+  }, [deaths]);
+
+  function fmt(n: number) {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return n.toLocaleString();
+  }
+
+  const deathColor = deaths >= 500000 ? '#ff2d55' : deaths >= 50000 ? '#ff6a00' : deaths >= 1000 ? '#ffd700' : '#ff6a00';
+
+  return (
+    <div className="absolute pointer-events-none" style={{
+      top: 48, right: 12, zIndex: 500,
+      background: 'rgba(0,0,0,0.88)',
+      border: `1px solid ${flash ? deathColor : deathColor + '60'}`,
+      borderRadius: '8px',
+      padding: '8px 14px',
+      backdropFilter: 'blur(10px)',
+      boxShadow: flash ? `0 0 20px ${deathColor}60` : `0 0 8px rgba(0,0,0,0.6)`,
+      transition: 'border-color 0.3s, box-shadow 0.3s',
+      minWidth: '140px',
+    }}>
+      <div className="font-mono" style={{ color: 'rgba(255,255,255,0.38)', fontSize: '8px', letterSpacing: '0.22em', marginBottom: '3px' }}>
+        ☠ SIMULATION CASUALTIES
+      </div>
+      <div className="font-orbitron font-black" style={{
+        color: deathColor, fontSize: '22px', lineHeight: 1, letterSpacing: '0.04em',
+        textShadow: flash ? `0 0 20px ${deathColor}` : 'none',
+        transition: 'text-shadow 0.3s',
+      }}>
+        {fmt(displayed)}
+      </div>
+      {!isRunning && displayed === 0 && (
+        <div className="font-mono" style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px', marginTop: '2px' }}>
+          AWAITING SIM
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── World Population Counter ───────────────────────────────────────────────────
+const WORLD_POP_BASE = 8_119_000_000;
+
+function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boolean }) {
+  const [tick, setTick] = useState(0);
+  const [flash, setFlash] = useState(false);
+  const prevDeaths = useRef(0);
+
+  // Natural births add ~4.4 people/sec, deaths ~1.8/sec = net +2.6/sec
+  useEffect(() => {
+    if (!isRunning) return;
+    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
+  useEffect(() => {
+    if (deaths !== prevDeaths.current) {
+      prevDeaths.current = deaths;
+      setFlash(true);
+      setTimeout(() => setFlash(false), 800);
+    }
+  }, [deaths]);
+
+  // Births accumulate at ~4.4/sec while running; net pop = base + births - sim deaths
+  const naturalBirths = tick * 4.4;
+  const naturalDeaths = tick * 1.8;
+  const currentPop = Math.round(WORLD_POP_BASE + naturalBirths - naturalDeaths - deaths);
+
+  function fmtPop(n: number) {
+    return (n / 1_000_000_000).toFixed(6) + 'B';
+  }
+
+  return (
+    <div className="absolute pointer-events-none" style={{
+      bottom: 36, left: 12, zIndex: 500,
+      background: 'rgba(0,0,0,0.88)',
+      border: `1px solid ${flash ? '#ff2d55' : 'rgba(0,245,255,0.25)'}`,
+      borderRadius: '8px',
+      padding: '8px 14px',
+      backdropFilter: 'blur(10px)',
+      boxShadow: flash ? '0 0 18px rgba(255,45,85,0.5)' : '0 0 8px rgba(0,0,0,0.6)',
+      transition: 'border-color 0.3s, box-shadow 0.3s',
+      minWidth: '170px',
+    }}>
+      <div className="font-mono" style={{ color: 'rgba(255,255,255,0.38)', fontSize: '8px', letterSpacing: '0.22em', marginBottom: '3px' }}>
+        🌍 WORLD POPULATION
+      </div>
+      <div className="font-orbitron font-black" style={{
+        color: flash ? '#ff6a00' : 'rgba(0,245,255,0.9)',
+        fontSize: '15px', lineHeight: 1, letterSpacing: '0.04em',
+        fontVariantNumeric: 'tabular-nums',
+        textShadow: flash ? '0 0 16px rgba(255,106,0,0.8)' : '0 0 8px rgba(0,245,255,0.3)',
+        transition: 'color 0.3s, text-shadow 0.3s',
+      }}>
+        {isRunning || deaths > 0 ? fmtPop(currentPop) : fmtPop(WORLD_POP_BASE)}
+      </div>
+      <div className="flex items-center gap-2 mt-1">
+        <span className="font-mono" style={{ color: '#00ff9d', fontSize: '8px' }}>
+          ▲ {isRunning ? '+4.4/s births' : 'STANDBY'}
+        </span>
+        {deaths > 0 && (
+          <span className="font-mono" style={{ color: '#ff2d55', fontSize: '8px' }}>
+            ▼ {deaths >= 1000 ? (deaths / 1000).toFixed(1) + 'K' : deaths} sim deaths
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
   conflictZones: ConflictZone[];
@@ -457,7 +590,7 @@ interface Props {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[] }: Props) {
+export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[], worldState }: Props) {
   const [arcs, setArcs]   = useState<Arc[]>([]);
   const [units, setUnits] = useState<MapUnit[]>([]);
   const [flashColor, setFlashColor] = useState<string|null>(null);
@@ -859,6 +992,12 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       }}>
         GEOWARS MATRIX · GLOBAL TACTICAL OVERVIEW
       </div>
+
+      {/* ── DEATH TOLL — top right ── */}
+      <DeathTollCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} color={tc} />
+
+      {/* ── WORLD POPULATION — bottom left ── */}
+      <WorldPopCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} />
 
       {/* ── Animated game overlay (SVG) ── */}
       {leafletMap && (

@@ -71,6 +71,7 @@ function makeInitialState(): WorldState {
     bots: [],
     botInfluenceLog: [],
     economicStress: 0,
+    cumulativeDeaths: 0,
     breakingIntel: [
       'SIGINT: Encrypted traffic between Moscow and Tehran surged 340% in last 6 hours',
       'HUMINT: Source confirms emergency PLA naval command meeting convened',
@@ -184,6 +185,20 @@ export function applyEvent(event: GeoEvent): void {
     : 0;
   const economicStress = Math.min(100, (_s().economicStress ?? 0) + econStressDelta);
 
+  // Calculate casualties from this event
+  let eventDeaths = 0;
+  if (event.type === 'nuclear') {
+    eventDeaths = Math.round(event.impact ** 2.4 * (8000 + Math.random() * 120000));
+  } else if (event.type === 'military') {
+    if (event.impact >= 9) eventDeaths = Math.round(event.impact * (3000 + Math.random() * 18000));
+    else if (event.impact >= 7) eventDeaths = Math.round(event.impact * (400 + Math.random() * 3000));
+    else if (event.impact >= 5) eventDeaths = Math.round(event.impact * (40 + Math.random() * 400));
+    else eventDeaths = Math.round(Math.random() * 80);
+  } else if (event.type === 'humanitarian') {
+    eventDeaths = Math.round(event.impact * (20 + Math.random() * 200));
+  }
+  const cumulativeDeaths = (_s().cumulativeDeaths ?? 0) + eventDeaths;
+
   // Apply bot influence on indicators
   const bots = _s().bots ?? [];
   const botInfluenceLog: BotInfluenceEntry[] = [...(_s().botInfluenceLog ?? [])];
@@ -209,7 +224,7 @@ export function applyEvent(event: GeoEvent): void {
   }
 
   _setS({ ..._s(), events, indicators: ind, breakingIntel: intel, conflictZones,
-    historyLog: newHistory, economicStress,
+    historyLog: newHistory, economicStress, cumulativeDeaths,
     botInfluenceLog: botInfluenceLog.slice(0, 30) });
 }
 
