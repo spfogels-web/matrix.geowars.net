@@ -474,11 +474,14 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const [cinematic, setCinematic] = useState<{
     active:boolean; phase:CinPhase; color:string; label:string;
     originLabel:string; targetLabel:string; eventType:string; impact:number;
-    ox:number; oy:number; tx:number; ty:number;
+    // Store geographic coords so pixel positions stay accurate after map pans/zooms
+    originLatLng:[number,number]; targetLatLng:[number,number]; // [lat, lng]
     cinW:number; cinH:number;
     casualties:string;
   }>({active:false,phase:'done',color:'#ff2d55',label:'',originLabel:'',targetLabel:'',
-    eventType:'military',impact:8,ox:200,oy:400,tx:700,ty:250,cinW:900,cinH:500,casualties:''});
+    eventType:'military',impact:8,
+    originLatLng:[31.5,35],targetLatLng:[32,54],
+    cinW:900,cinH:500,casualties:''});
 
   const mapDivRef          = useRef<HTMLDivElement>(null);
   const leafletMapRef      = useRef<L.Map|null>(null);
@@ -583,22 +586,19 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
       const W=mapDivRef.current?.clientWidth??900;
       const H=mapDivRef.current?.clientHeight??500;
-      let ox=W*0.25, oy=H*0.6, tx=W*0.75, ty=H*0.35;
-      if(leafletMapRef.current){
-        const op=leafletMapRef.current.latLngToContainerPoint(L.latLng(originC[1],originC[0]));
-        const tp=leafletMapRef.current.latLngToContainerPoint(L.latLng(targetC[1],targetC[0]));
-        ox=op.x; oy=op.y; tx=tp.x; ty=tp.y;
-      }
 
       const casualties=ev.impact>=9
         ?'Mass casualties confirmed — emergency response mobilized, hospitals overwhelmed'
         :'Multiple casualties reported — rescue operations underway, hospitals on alert';
 
+      // Store lat/lng so pixel coords reproject correctly as map pans/zooms
       setCinematic({active:true,phase:'alert',color,label,
         originLabel:LEADER_NAMES[originLead]||ev.region,
         targetLabel:LEADER_NAMES[targetLead]||ev.region,
         eventType:ev.type,impact:ev.impact,
-        ox,oy,tx,ty,cinW:W,cinH:H,casualties,
+        originLatLng:[originC[1],originC[0]],  // [lat, lng]
+        targetLatLng:[targetC[1],targetC[0]],  // [lat, lng]
+        cinW:W,cinH:H,casualties,
       });
 
       cinematicRef.current.push(setTimeout(()=>setCinematic(p=>({...p,phase:'zoom'})),2200));
@@ -681,13 +681,24 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
   const tc=tension>=75?'#ff2d55':tension>=55?'#ff6a00':tension>=30?'#ffd700':'#00f5ff';
 
-  const cinMidX=(cinematic.ox+cinematic.tx)/2;
-  const cinDist=Math.sqrt((cinematic.tx-cinematic.ox)**2+(cinematic.ty-cinematic.oy)**2);
+  // Reproject cinematic coordinates from lat/lng every render (mapVersion triggers re-render on map move)
+  const [cinOx, cinOy, cinTx, cinTy] = (() => {
+    void mapVersion; // ensures re-render on every map move/zoom
+    if (!leafletMap || !cinematic.active) return [200, 400, 700, 250];
+    try {
+      const op = leafletMap.latLngToContainerPoint(L.latLng(cinematic.originLatLng[0], cinematic.originLatLng[1]));
+      const tp = leafletMap.latLngToContainerPoint(L.latLng(cinematic.targetLatLng[0], cinematic.targetLatLng[1]));
+      return [op.x, op.y, tp.x, tp.y];
+    } catch { return [200, 400, 700, 250]; }
+  })();
+
+  const cinMidX=(cinOx+cinTx)/2;
+  const cinDist=Math.sqrt((cinTx-cinOx)**2+(cinTy-cinOy)**2);
   const cinArcH=Math.max(60,cinDist*0.45);
-  const cinMidY=(cinematic.oy+cinematic.ty)/2-cinArcH;
-  const cinArcPath=`M ${cinematic.ox.toFixed(0)},${cinematic.oy.toFixed(0)} Q ${cinMidX.toFixed(0)},${cinMidY.toFixed(0)} ${cinematic.tx.toFixed(0)},${cinematic.ty.toFixed(0)}`;
-  const cinLx=Math.min(cinematic.cinW-80,Math.max(10,cinematic.tx+10));
-  const cinLy=Math.max(20,cinematic.ty-14);
+  const cinMidY=(cinOy+cinTy)/2-cinArcH;
+  const cinArcPath=`M ${cinOx.toFixed(0)},${cinOy.toFixed(0)} Q ${cinMidX.toFixed(0)},${cinMidY.toFixed(0)} ${cinTx.toFixed(0)},${cinTy.toFixed(0)}`;
+  const cinLx=Math.min(cinematic.cinW-80,Math.max(10,cinTx+10));
+  const cinLy=Math.max(20,cinTy-14);
 
   return (
     <div
@@ -720,6 +731,10 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         }
         @keyframes border-glow-pulse {
           0%,100%{ opacity:0.55 } 50%{ opacity:1 }
+        }
+        @keyframes toast-slide-in {
+          0%{transform:translateX(-120%) scale(0.9);opacity:0}
+          100%{transform:translateX(0) scale(1);opacity:1}
         }
         @keyframes cam-shake {
           0%,100%{transform:translate(0,0) rotate(0deg)}
@@ -874,49 +889,62 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
 
           {cinematic.phase==='alert'&&(
             <>
-              <div className="absolute inset-0 impact-flash" style={{background:`${cinematic.color}22`,zIndex:701}}/>
-              {/* Satellite targeting reticle */}
-              <svg className="absolute inset-0" style={{zIndex:702,pointerEvents:'none'}}
-                viewBox={`0 0 ${cinematic.cinW} ${cinematic.cinH}`} preserveAspectRatio="xMidYMid meet">
-                {/* Spinning outer ring */}
-                <circle cx={cinematic.tx} cy={cinematic.ty} r="70" fill="none" stroke={cinematic.color}
-                  strokeWidth="1" strokeDasharray="12,8" opacity="0.7"
-                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-spin 3s linear infinite'}}/>
-                {/* Pulsing middle ring */}
-                <circle cx={cinematic.tx} cy={cinematic.ty} r="44" fill="none" stroke={cinematic.color}
-                  strokeWidth="1.5" opacity="0.8"
-                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-pulse 1s ease-in-out infinite'}}/>
-                {/* Inner dot */}
-                <circle cx={cinematic.tx} cy={cinematic.ty} r="6" fill={cinematic.color} opacity="0.9"
-                  style={{filter:`drop-shadow(0 0 8px ${cinematic.color})`}}/>
-                {/* Crosshair lines */}
-                <line x1={cinematic.tx-90} y1={cinematic.ty} x2={cinematic.tx-50} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
-                <line x1={cinematic.tx+50} y1={cinematic.ty} x2={cinematic.tx+90} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
-                <line x1={cinematic.tx} y1={cinematic.ty-90} x2={cinematic.tx} y2={cinematic.ty-50} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
-                <line x1={cinematic.tx} y1={cinematic.ty+50} x2={cinematic.tx} y2={cinematic.ty+90} stroke={cinematic.color} strokeWidth="1.5" opacity="0.7"/>
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center" style={{zIndex:703}}>
-                <div className="font-mono mb-3 px-4 py-1 rounded" style={{
-                  background:`${cinematic.color}18`,border:`1px solid ${cinematic.color}50`,
-                  color:`${cinematic.color}cc`,fontSize:'10px',letterSpacing:'0.25em'}}>
-                  SATELLITE LOCK-ON ACQUIRED · TARGET CONFIRMED
-                </div>
-                <div className="font-orbitron font-black alert-pulse text-center px-10 py-7 rounded-2xl"
-                  style={{background:'rgba(0,0,0,0.95)',border:`2px solid ${cinematic.color}`,
-                    boxShadow:`0 0 60px ${cinematic.color}60,inset 0 0 40px ${cinematic.color}10`,
-                    letterSpacing:'0.3em',fontSize:'clamp(18px,3vw,32px)',color:cinematic.color,
-                    textShadow:`0 0 30px ${cinematic.color}`}}>
-                  {cinematic.eventType==='nuclear'?'☢ NUCLEAR LAUNCH DETECTED':'⚡ MISSILE LAUNCH DETECTED'}
-                </div>
-                <div className="font-mono mt-4 px-6 py-2 rounded-lg"
-                  style={{background:'rgba(0,0,0,0.85)',border:`1px solid ${cinematic.color}40`,
-                    color:'rgba(255,255,255,0.85)',fontSize:'13px',letterSpacing:'0.08em'}}>
-                  {cinematic.label}
-                </div>
-                <div className="font-mono mt-2" style={{color:`${cinematic.color}80`,fontSize:'10px',letterSpacing:'0.2em'}}>
-                  {cinematic.originLabel} → {cinematic.targetLabel}
+              {/* Subtle screen flash — doesn't block map view */}
+              <div className="absolute inset-0 impact-flash pointer-events-none" style={{background:`${cinematic.color}14`,zIndex:701}}/>
+              {/* TOP-LEFT TOAST — small, non-blocking, 2.5s then advances to zoom */}
+              <div className="absolute pointer-events-none fade-in" style={{
+                top:48,left:12,zIndex:703,maxWidth:'300px',
+                animation:'toast-slide-in 0.3s ease-out',
+              }}>
+                <div className="rounded-xl overflow-hidden" style={{
+                  background:'rgba(0,0,0,0.94)',
+                  border:`1.5px solid ${cinematic.color}`,
+                  boxShadow:`0 0 24px ${cinematic.color}50, 0 4px 20px rgba(0,0,0,0.8)`,
+                  backdropFilter:'blur(12px)',
+                }}>
+                  {/* Flashing top bar */}
+                  <div style={{height:'3px',background:cinematic.color,animation:'alert-pulse 0.4s ease-in-out infinite'}}/>
+                  <div className="px-3 py-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="status-blink" style={{display:'inline-block',width:'8px',height:'8px',
+                        borderRadius:'50%',background:cinematic.color,boxShadow:`0 0 8px ${cinematic.color}`,flexShrink:0}}/>
+                      <span className="font-orbitron font-black" style={{
+                        color:cinematic.color,fontSize:'11px',letterSpacing:'0.22em',
+                        textShadow:`0 0 14px ${cinematic.color}`}}>
+                        {cinematic.eventType==='nuclear'?'☢ NUCLEAR LAUNCH':'⚡ STRIKE DETECTED'}
+                      </span>
+                    </div>
+                    <div className="font-mono" style={{color:'rgba(255,255,255,0.82)',fontSize:'11px',
+                      lineHeight:'1.4',letterSpacing:'0.03em'}}>
+                      {cinematic.label}
+                    </div>
+                    <div className="font-mono mt-1.5" style={{color:`${cinematic.color}90`,fontSize:'10px',letterSpacing:'0.08em'}}>
+                      {cinematic.originLabel} → {cinematic.targetLabel}
+                    </div>
+                  </div>
+                  {/* Auto-dismiss progress bar */}
+                  <div style={{height:'2px',background:'rgba(255,255,255,0.08)'}}>
+                    <div style={{height:'100%',background:cinematic.color,
+                      animation:'shrink-bar 2.5s linear forwards',transformOrigin:'left'}}/>
+                  </div>
                 </div>
               </div>
+              {/* Reticle on target — stays on map, small */}
+              <svg className="absolute inset-0" style={{zIndex:702,pointerEvents:'none'}}
+                viewBox={`0 0 ${cinematic.cinW} ${cinematic.cinH}`} preserveAspectRatio="xMidYMid meet">
+                <circle cx={cinTx} cy={cinTy} r="55" fill="none" stroke={cinematic.color}
+                  strokeWidth="1" strokeDasharray="10,7" opacity="0.65"
+                  style={{transformOrigin:`${cinTx}px ${cinTy}px`,animation:'reticle-spin 3s linear infinite'}}/>
+                <circle cx={cinTx} cy={cinTy} r="32" fill="none" stroke={cinematic.color}
+                  strokeWidth="1.5" opacity="0.75"
+                  style={{animation:'reticle-pulse 0.9s ease-in-out infinite'}}/>
+                <circle cx={cinTx} cy={cinTy} r="5" fill={cinematic.color} opacity="0.9"
+                  style={{filter:`drop-shadow(0 0 6px ${cinematic.color})`}}/>
+                <line x1={cinTx-65} y1={cinTy} x2={cinTx-40} y2={cinTy} stroke={cinematic.color} strokeWidth="1.5" opacity="0.6"/>
+                <line x1={cinTx+40} y1={cinTy} x2={cinTx+65} y2={cinTy} stroke={cinematic.color} strokeWidth="1.5" opacity="0.6"/>
+                <line x1={cinTx} y1={cinTy-65} x2={cinTx} y2={cinTy-40} stroke={cinematic.color} strokeWidth="1.5" opacity="0.6"/>
+                <line x1={cinTx} y1={cinTy+40} x2={cinTx} y2={cinTy+65} stroke={cinematic.color} strokeWidth="1.5" opacity="0.6"/>
+              </svg>
             </>
           )}
 
@@ -943,28 +971,25 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
               {/* Targeting reticle over target */}
               <svg className="absolute inset-0" style={{zIndex:702,pointerEvents:'none'}}
                 viewBox={`0 0 ${cinematic.cinW} ${cinematic.cinH}`} preserveAspectRatio="xMidYMid meet">
-                {/* Scanning arc */}
-                <circle cx={cinematic.tx} cy={cinematic.ty} r="100" fill="none" stroke={cinematic.color}
+                <circle cx={cinTx} cy={cinTy} r="100" fill="none" stroke={cinematic.color}
                   strokeWidth="1" strokeDasharray="16,10" opacity="0.5"
-                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-spin 4s linear infinite'}}/>
-                <circle cx={cinematic.tx} cy={cinematic.ty} r="60" fill="none" stroke={cinematic.color}
+                  style={{transformOrigin:`${cinTx}px ${cinTy}px`,animation:'reticle-spin 4s linear infinite'}}/>
+                <circle cx={cinTx} cy={cinTy} r="60" fill="none" stroke={cinematic.color}
                   strokeWidth="1.5" strokeDasharray="6,6" opacity="0.7"
-                  style={{transformOrigin:`${cinematic.tx}px ${cinematic.ty}px`,animation:'reticle-spin 2s linear infinite reverse'}}/>
-                <circle cx={cinematic.tx} cy={cinematic.ty} r="30" fill="none" stroke={cinematic.color}
+                  style={{transformOrigin:`${cinTx}px ${cinTy}px`,animation:'reticle-spin 2s linear infinite reverse'}}/>
+                <circle cx={cinTx} cy={cinTy} r="30" fill="none" stroke={cinematic.color}
                   strokeWidth="2" opacity="0.8" style={{animation:'reticle-pulse 1s ease-in-out infinite'}}/>
-                <circle cx={cinematic.tx} cy={cinematic.ty} r="5" fill={cinematic.color} opacity="1"
+                <circle cx={cinTx} cy={cinTy} r="5" fill={cinematic.color} opacity="1"
                   style={{filter:`drop-shadow(0 0 10px ${cinematic.color})`}}/>
-                {/* Corner brackets */}
                 {[[-1,-1],[1,-1],[-1,1],[1,1]].map(([sx,sy],_i)=>(
                   <g key={_i}>
-                    <line x1={cinematic.tx+sx*35} y1={cinematic.ty+sy*25} x2={cinematic.tx+sx*20} y2={cinematic.ty+sy*25} stroke={cinematic.color} strokeWidth="2" opacity="0.9"/>
-                    <line x1={cinematic.tx+sx*35} y1={cinematic.ty+sy*25} x2={cinematic.tx+sx*35} y2={cinematic.ty+sy*10} stroke={cinematic.color} strokeWidth="2" opacity="0.9"/>
+                    <line x1={cinTx+sx*35} y1={cinTy+sy*25} x2={cinTx+sx*20} y2={cinTy+sy*25} stroke={cinematic.color} strokeWidth="2" opacity="0.9"/>
+                    <line x1={cinTx+sx*35} y1={cinTy+sy*25} x2={cinTx+sx*35} y2={cinTy+sy*10} stroke={cinematic.color} strokeWidth="2" opacity="0.9"/>
                   </g>
                 ))}
-                {/* Data readout */}
-                <text x={cinematic.tx+40} y={cinematic.ty+80} fill={cinematic.color} fontSize="10"
+                <text x={cinTx+40} y={cinTy+80} fill={cinematic.color} fontSize="10"
                   fontFamily="Share Tech Mono" opacity="0.75">
-                  {`LAT: ${(cinematic.ty/cinematic.cinH*180-90).toFixed(2)}° · LON: ${(cinematic.tx/cinematic.cinW*360-180).toFixed(2)}°`}
+                  {`LAT: ${cinematic.targetLatLng[0].toFixed(2)}° · LON: ${cinematic.targetLatLng[1].toFixed(2)}°`}
                 </text>
               </svg>
             </>
@@ -987,23 +1012,23 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
                   <mpath xlinkHref="#cinArc"/>
                 </animateMotion>
               </circle>
-              <circle cx={cinematic.ox} cy={cinematic.oy} r="7" fill={cinematic.color} opacity="0.6"/>
-              <circle cx={cinematic.ox} cy={cinematic.oy} r="14" fill="none" stroke={cinematic.color} strokeWidth="1" opacity="0.3"/>
-              <text x={cinematic.ox+12} y={cinematic.oy-8} fill={cinematic.color} fontSize="12"
+              <circle cx={cinOx} cy={cinOy} r="7" fill={cinematic.color} opacity="0.6"/>
+              <circle cx={cinOx} cy={cinOy} r="14" fill="none" stroke={cinematic.color} strokeWidth="1" opacity="0.3"/>
+              <text x={cinOx+12} y={cinOy-8} fill={cinematic.color} fontSize="12"
                 fontFamily="Share Tech Mono" opacity="0.85">{cinematic.originLabel}</text>
-              <circle cx={cinematic.tx} cy={cinematic.ty} r="20" fill="none" stroke={cinematic.color} strokeWidth="1.5">
+              <circle cx={cinTx} cy={cinTy} r="20" fill="none" stroke={cinematic.color} strokeWidth="1.5">
                 <animate attributeName="r" values="20;40;20" dur="0.9s" repeatCount="indefinite"/>
                 <animate attributeName="opacity" values="0.9;0.2;0.9" dur="0.9s" repeatCount="indefinite"/>
               </circle>
-              <circle cx={cinematic.tx} cy={cinematic.ty} r="6" fill={cinematic.color}/>
-              <line x1={cinematic.tx-12} y1={cinematic.ty} x2={cinematic.tx-28} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
-              <line x1={cinematic.tx+12} y1={cinematic.ty} x2={cinematic.tx+28} y2={cinematic.ty} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
-              <line x1={cinematic.tx} y1={cinematic.ty-12} x2={cinematic.tx} y2={cinematic.ty-28} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
-              <line x1={cinematic.tx} y1={cinematic.ty+12} x2={cinematic.tx} y2={cinematic.ty+28} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
+              <circle cx={cinTx} cy={cinTy} r="6" fill={cinematic.color}/>
+              <line x1={cinTx-12} y1={cinTy} x2={cinTx-28} y2={cinTy} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
+              <line x1={cinTx+12} y1={cinTy} x2={cinTx+28} y2={cinTy} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
+              <line x1={cinTx} y1={cinTy-12} x2={cinTx} y2={cinTy-28} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
+              <line x1={cinTx} y1={cinTy+12} x2={cinTx} y2={cinTy+28} stroke={cinematic.color} strokeWidth="1.5" opacity="0.8"/>
               <text x={cinLx} y={cinLy} fill={cinematic.color} fontSize="13" fontFamily="Share Tech Mono" opacity="0.9">
                 ◉ {cinematic.targetLabel}
               </text>
-              <text x={cinematic.tx-30} y={cinematic.ty+50} fill={cinematic.color} fontSize="10" fontFamily="Share Tech Mono" opacity="0.7">
+              <text x={cinTx-30} y={cinTy+50} fill={cinematic.color} fontSize="10" fontFamily="Share Tech Mono" opacity="0.7">
                 🚀 STRIKE IN PROGRESS
               </text>
             </svg>
@@ -1013,7 +1038,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
             <>
               <div className="absolute inset-0 impact-flash" style={{background:'rgba(255,255,255,0.15)',zIndex:702}}/>
               <div className="absolute flex items-center justify-center pointer-events-none" style={{
-                zIndex:703,left:cinematic.tx-100,top:cinematic.ty-100,width:200,height:200}}>
+                zIndex:703,left:cinTx-100,top:cinTy-100,width:200,height:200}}>
                 <div className="impact-flash" style={{width:160,height:160,borderRadius:'50%',
                   background:`radial-gradient(circle,#ffffff 0%,${cinematic.color} 30%,transparent 70%)`,
                   boxShadow:`0 0 100px ${cinematic.color},0 0 200px ${cinematic.color}40`}}/>
@@ -1025,7 +1050,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
             <>
               {/* Shockwave rings */}
               <div className="absolute flex items-center justify-center pointer-events-none" style={{
-                zIndex:702,left:cinematic.tx-300,top:cinematic.ty-300,width:600,height:600}}>
+                zIndex:702,left:cinTx-300,top:cinTy-300,width:600,height:600}}>
                 {[0,1,2,3].map(i=>(
                   <div key={i} className="absolute rounded-full" style={{
                     width:`${120+i*220}px`,height:`${120+i*220}px`,

@@ -213,15 +213,43 @@ export default function Home() {
 
         <div className="flex-1" />
 
-        {/* Bot panel toggle */}
+        {/* Bot panel toggle — focal point button */}
         <button onClick={() => setBotPanelOpen(v => !v)}
-          className="hdr-btn hdr-btn-purple shrink-0 font-orbitron font-bold"
-          style={botPanelOpen ? { color: '#b44fff', borderColor: 'rgba(180,79,255,0.7)', background: 'rgba(180,79,255,0.16)', fontSize: '14px', padding: '12px 20px' } : { fontSize: '14px', padding: '12px 20px' }}>
-          🤖 AGENTS
-          {(state.bots ?? []).length > 0 && (
-            <span style={{ background: '#b44fff', color: '#000', borderRadius: '10px', padding: '0 6px', fontSize: '10px', fontWeight: 'bold', lineHeight: '16px' }}>
+          className="shrink-0 font-orbitron font-bold"
+          style={{
+            fontSize: '13px',
+            padding: '10px 22px',
+            borderRadius: '8px',
+            border: botPanelOpen ? '1.5px solid #b44fff' : '1.5px solid rgba(180,79,255,0.7)',
+            background: botPanelOpen
+              ? 'rgba(180,79,255,0.28)'
+              : 'linear-gradient(135deg, rgba(180,79,255,0.18) 0%, rgba(120,40,200,0.22) 100%)',
+            color: '#d090ff',
+            letterSpacing: '0.14em',
+            cursor: 'pointer',
+            position: 'relative',
+            boxShadow: botPanelOpen
+              ? '0 0 20px rgba(180,79,255,0.5), inset 0 0 14px rgba(180,79,255,0.1)'
+              : '0 0 14px rgba(180,79,255,0.35), inset 0 0 10px rgba(180,79,255,0.08)',
+            animation: botPanelOpen ? 'none' : 'agents-btn-pulse 2.2s ease-in-out infinite',
+            transition: 'box-shadow 0.2s, background 0.2s',
+            display: 'flex', alignItems: 'center', gap: '7px',
+          }}>
+          <span style={{ fontSize: '16px' }}>🤖</span>
+          AGENTS
+          {(state.bots ?? []).length > 0 ? (
+            <span style={{
+              background: '#b44fff', color: '#000', borderRadius: '10px',
+              padding: '1px 7px', fontSize: '10px', fontWeight: 'bold', lineHeight: '15px',
+            }}>
               {(state.bots ?? []).length}
             </span>
+          ) : (
+            <span style={{
+              fontSize: '9px', color: 'rgba(180,79,255,0.55)',
+              border: '1px solid rgba(180,79,255,0.3)', borderRadius: '4px',
+              padding: '1px 5px', letterSpacing: '0.08em',
+            }}>NEW</span>
           )}
         </button>
 
