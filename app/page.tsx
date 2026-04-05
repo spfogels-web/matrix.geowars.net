@@ -342,6 +342,7 @@ export default function Home() {
             <LiveFeed
               events={state.events}
               messages={state.messages}
+              botMessages={state.botMessages ?? []}
               isExpanded={feedExpanded}
               onToggle={() => setFeedExpanded(v => !v)}
             />

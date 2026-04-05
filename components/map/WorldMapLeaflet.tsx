@@ -443,7 +443,7 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
 }
 
 // ── Death Toll Counter ────────────────────────────────────────────────────────
-function DeathTollCounter({ deaths, isRunning, color }: { deaths: number; isRunning: boolean; color: string }) {
+function DeathTollCounter({ deaths, isRunning }: { deaths: number; isRunning: boolean }) {
   const [displayed, setDisplayed] = useState(0);
   const [flash, setFlash] = useState(false);
   const prevRef = useRef(0);
@@ -511,6 +511,7 @@ const WORLD_POP_BASE = 8_119_000_000;
 function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boolean }) {
   const [tick, setTick] = useState(0);
   const [flash, setFlash] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const prevDeaths = useRef(0);
 
   // Natural births add ~4.4 people/sec, deaths ~1.8/sec = net +2.6/sec
@@ -528,49 +529,106 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
     }
   }, [deaths]);
 
-  // Births accumulate at ~4.4/sec while running; net pop = base + births - sim deaths
   const naturalBirths = tick * 4.4;
   const naturalDeaths = tick * 1.8;
   const currentPop = Math.round(WORLD_POP_BASE + naturalBirths - naturalDeaths - deaths);
 
   function fmtPop(n: number) {
+    if (expanded) return n.toLocaleString();
     return (n / 1_000_000_000).toFixed(6) + 'B';
   }
 
+  const borderColor = flash ? '#ff2d55' : expanded ? 'rgba(0,245,255,0.5)' : 'rgba(0,245,255,0.25)';
+  const glowShadow  = flash
+    ? '0 0 22px rgba(255,45,85,0.55)'
+    : expanded
+      ? '0 0 22px rgba(0,245,255,0.2), 0 0 8px rgba(0,0,0,0.7)'
+      : '0 0 8px rgba(0,0,0,0.6)';
+
   return (
-    <div className="absolute pointer-events-none" style={{
-      bottom: 36, left: 12, zIndex: 500,
-      background: 'rgba(0,0,0,0.88)',
-      border: `1px solid ${flash ? '#ff2d55' : 'rgba(0,245,255,0.25)'}`,
-      borderRadius: '8px',
-      padding: '8px 14px',
-      backdropFilter: 'blur(10px)',
-      boxShadow: flash ? '0 0 18px rgba(255,45,85,0.5)' : '0 0 8px rgba(0,0,0,0.6)',
-      transition: 'border-color 0.3s, box-shadow 0.3s',
-      minWidth: '170px',
-    }}>
-      <div className="font-mono" style={{ color: 'rgba(255,255,255,0.38)', fontSize: '8px', letterSpacing: '0.22em', marginBottom: '3px' }}>
-        🌍 WORLD POPULATION
+    <div
+      className="absolute"
+      style={{
+        bottom: 36, left: 12, zIndex: 500,
+        background: expanded ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.88)',
+        border: `1px solid ${borderColor}`,
+        borderRadius: '10px',
+        padding: expanded ? '14px 20px' : '9px 16px',
+        backdropFilter: 'blur(12px)',
+        boxShadow: glowShadow,
+        transition: 'border-color 0.3s, box-shadow 0.3s, padding 0.25s',
+        minWidth: expanded ? '280px' : '190px',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+      onClick={() => setExpanded(e => !e)}
+      title={expanded ? 'Collapse' : 'Expand'}
+    >
+      {/* Label row */}
+      <div className="flex items-center justify-between" style={{ marginBottom: expanded ? '8px' : '4px' }}>
+        <div className="font-mono" style={{ color: 'rgba(255,255,255,0.45)', fontSize: expanded ? '9px' : '8px', letterSpacing: '0.22em' }}>
+          🌍 WORLD POPULATION
+        </div>
+        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', marginLeft: '8px' }}>
+          {expanded ? '▼' : '▲'}
+        </span>
       </div>
+
+      {/* Main number */}
       <div className="font-orbitron font-black" style={{
-        color: flash ? '#ff6a00' : 'rgba(0,245,255,0.9)',
-        fontSize: '15px', lineHeight: 1, letterSpacing: '0.04em',
+        color: '#ffffff',
+        fontSize: expanded ? '22px' : '17px',
+        lineHeight: 1,
+        letterSpacing: expanded ? '0.03em' : '0.04em',
         fontVariantNumeric: 'tabular-nums',
-        textShadow: flash ? '0 0 16px rgba(255,106,0,0.8)' : '0 0 8px rgba(0,245,255,0.3)',
-        transition: 'color 0.3s, text-shadow 0.3s',
+        textShadow: flash
+          ? '0 0 18px rgba(255,106,0,0.9)'
+          : expanded
+            ? '0 0 14px rgba(255,255,255,0.25)'
+            : '0 0 6px rgba(255,255,255,0.15)',
+        transition: 'color 0.3s, text-shadow 0.3s, font-size 0.25s',
       }}>
         {isRunning || deaths > 0 ? fmtPop(currentPop) : fmtPop(WORLD_POP_BASE)}
       </div>
-      <div className="flex items-center gap-2 mt-1">
-        <span className="font-mono" style={{ color: '#00ff9d', fontSize: '8px' }}>
+
+      {/* Stats row — always visible */}
+      <div className="flex items-center gap-3 mt-2">
+        <span className="font-mono" style={{ color: '#00ff9d', fontSize: expanded ? '10px' : '8px' }}>
           ▲ {isRunning ? '+4.4/s births' : 'STANDBY'}
         </span>
         {deaths > 0 && (
-          <span className="font-mono" style={{ color: '#ff2d55', fontSize: '8px' }}>
-            ▼ {deaths >= 1000 ? (deaths / 1000).toFixed(1) + 'K' : deaths} sim deaths
+          <span className="font-mono" style={{ color: '#ff2d55', fontSize: expanded ? '10px' : '8px' }}>
+            ▼ {deaths >= 1_000_000 ? (deaths / 1_000_000).toFixed(2) + 'M' : deaths >= 1000 ? (deaths / 1000).toFixed(1) + 'K' : deaths} sim deaths
           </span>
         )}
       </div>
+
+      {/* Expanded detail rows */}
+      {expanded && (
+        <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div className="flex justify-between font-mono" style={{ fontSize: '10px' }}>
+            <span style={{ color: 'rgba(255,255,255,0.45)' }}>Session births</span>
+            <span style={{ color: '#00ff9d' }}>+{Math.round(naturalBirths).toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between font-mono" style={{ fontSize: '10px' }}>
+            <span style={{ color: 'rgba(255,255,255,0.45)' }}>Natural deaths</span>
+            <span style={{ color: 'rgba(255,100,100,0.7)' }}>−{Math.round(naturalDeaths).toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between font-mono" style={{ fontSize: '10px' }}>
+            <span style={{ color: 'rgba(255,255,255,0.45)' }}>Conflict casualties</span>
+            <span style={{ color: deaths > 0 ? '#ff2d55' : 'rgba(255,255,255,0.25)' }}>
+              −{deaths.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex justify-between font-mono" style={{ fontSize: '10px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px' }}>
+            <span style={{ color: 'rgba(255,255,255,0.45)' }}>Net change</span>
+            <span style={{ color: (naturalBirths - naturalDeaths - deaths) >= 0 ? '#00ff9d' : '#ff2d55' }}>
+              {(naturalBirths - naturalDeaths - deaths) >= 0 ? '+' : ''}
+              {Math.round(naturalBirths - naturalDeaths - deaths).toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -994,7 +1052,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       </div>
 
       {/* ── DEATH TOLL — top right ── */}
-      <DeathTollCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} color={tc} />
+      <DeathTollCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} />
 
       {/* ── WORLD POPULATION — bottom left ── */}
       <WorldPopCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} />

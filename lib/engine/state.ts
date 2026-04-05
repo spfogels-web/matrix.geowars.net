@@ -2,7 +2,7 @@
 // Singleton in-memory world state. Lives on the server.
 // All API routes read/write this. SSE broadcasts changes to clients.
 
-import { WorldState, GeoEvent, LeaderMessage, OutcomeScenario, ConflictZone, LeaderMemory, UserBot, BotInfluenceEntry, HistoryEntry } from './types';
+import { WorldState, GeoEvent, LeaderMessage, OutcomeScenario, ConflictZone, LeaderMemory, UserBot, BotInfluenceEntry, BotMessage, HistoryEntry } from './types';
 import { LEADER_POOL, computeImportanceScores, getActiveLeaderIds } from './leaders';
 
 function makeLeaderMemory(): LeaderMemory {
@@ -70,6 +70,7 @@ function makeInitialState(): WorldState {
     historyLog: [],
     bots: [],
     botInfluenceLog: [],
+    botMessages: [],
     economicStress: 0,
     cumulativeDeaths: 0,
     breakingIntel: [
@@ -450,7 +451,7 @@ export function setScenario(id: string) {
 }
 
 // ── BOT MANAGEMENT ────────────────────────────────────────────────────────────
-export function deployBot(bot: import('./types').UserBot) {
+export function deployBot(bot: UserBot) {
   const bots = [...(_s().bots ?? [])].filter(b => b.id !== bot.id);
   _setS({ ..._s(), bots: [...bots, bot] });
   broadcast();
@@ -462,22 +463,85 @@ export function removeBot(botId: string) {
   broadcast();
 }
 
-export function updateBotMemory(botId: string, influenceDesc: string, success: boolean) {
-  const bots = (_s().bots ?? []).map(b => {
+export function addBotMessage(msg: BotMessage) {
+  const msgs = [msg, ...(_s().botMessages ?? [])].slice(0, 60);
+  _setS({ ..._s(), botMessages: msgs });
+  // No broadcast here — tick handler broadcasts after all ops complete
+}
+
+export function updateBotMemory(
+  botId: string,
+  influenceDesc: string,
+  success: boolean,
+  eventTitle?: string,
+  statement?: string,
+  region?: string,
+) {
+  const bots = (_s().bots ?? []).map((b: UserBot) => {
     if (b.id !== botId) return b;
     const prevMem = b.memory;
+
+    // Flat legacy fields
     const newActions = [influenceDesc, ...prevMem.lastActions].slice(0, 5);
     const newInfluences = [influenceDesc, ...prevMem.pastInfluence].slice(0, 10);
     const totalOps = prevMem.totalInfluenceApplied + 1;
-    const wins = success ? (prevMem.successRate / 100) * (totalOps - 1) + 1 : (prevMem.successRate / 100) * (totalOps - 1);
-    return { ...b, memory: {
-      ...prevMem,
-      lastActions: newActions,
-      pastInfluence: newInfluences,
-      totalInfluenceApplied: totalOps,
-      successRate: Math.round((wins / totalOps) * 100),
-      strategiesUsed: Array.from(new Set([b.class, ...prevMem.strategiesUsed])).slice(0, 8),
-    }};
+    const prevWins = (prevMem.successRate / 100) * (totalOps - 1);
+    const wins = success ? prevWins + 1 : prevWins;
+    const newSuccessRate = Math.round((wins / totalOps) * 100);
+
+    // Short-term memory
+    const st = prevMem.shortTerm ?? { recentEvents: [], recentStatements: [], lastAction: null };
+    const newShortTerm = {
+      recentEvents: eventTitle ? [eventTitle, ...st.recentEvents].slice(0, 5) : st.recentEvents,
+      recentStatements: statement ? [statement, ...st.recentStatements].slice(0, 3) : st.recentStatements,
+      lastAction: influenceDesc,
+    };
+
+    // Mid-term memory
+    const mt = prevMem.midTerm ?? { influenceHistory: [], favoredRegions: [], rivalAgents: [], trustedLeaders: [] };
+    const newFavoredRegions = region && !mt.favoredRegions.includes(region)
+      ? [...mt.favoredRegions, region].slice(0, 5)
+      : mt.favoredRegions;
+    const newMidTerm = {
+      ...mt,
+      influenceHistory: [influenceDesc, ...mt.influenceHistory].slice(0, 10),
+      favoredRegions: newFavoredRegions,
+    };
+
+    // Long-term memory
+    const lt = prevMem.longTerm ?? { successfulInterventions: 0, failedInterventions: 0, dominantStyle: null, reputationScore: 0 };
+    const newLongTerm = {
+      successfulInterventions: success ? lt.successfulInterventions + 1 : lt.successfulInterventions,
+      failedInterventions: success ? lt.failedInterventions : lt.failedInterventions + 1,
+      dominantStyle: b.class,
+      reputationScore: Math.max(-100, Math.min(100, lt.reputationScore + (success ? 3 : -2))),
+    };
+
+    // Adapt stance based on simulation tension + success rate
+    const tension = _s().globalTension;
+    const newConfidence = Math.max(10, Math.min(100, (prevMem.confidence ?? 60) + (success ? 4 : -3)));
+    let newStance: UserBot['memory']['stance'] = prevMem.stance ?? 'neutral';
+    if (tension > 75 && b.class === 'disruption') newStance = 'aggressive';
+    else if (tension > 75 && b.class === 'diplomatic') newStance = 'stabilizing';
+    else if (newSuccessRate > 70) newStance = 'opportunistic';
+    else if (newSuccessRate < 35) newStance = 'neutral';
+
+    return {
+      ...b,
+      memory: {
+        ...prevMem,
+        pastInfluence: newInfluences,
+        successRate: newSuccessRate,
+        strategiesUsed: Array.from(new Set([b.class, ...prevMem.strategiesUsed])).slice(0, 8),
+        lastActions: newActions,
+        totalInfluenceApplied: totalOps,
+        shortTerm: newShortTerm,
+        midTerm: newMidTerm,
+        longTerm: newLongTerm,
+        stance: newStance,
+        confidence: newConfidence,
+      },
+    };
   });
   _setS({ ..._s(), bots });
 }

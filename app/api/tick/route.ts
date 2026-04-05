@@ -3,11 +3,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { getState, applyEvent, applyResponses } from '@/lib/engine/state';
-import { SYSTEM_PROMPTS, buildUserPrompt } from '@/lib/agents/prompts';
+import { getState, applyEvent, applyResponses, addBotMessage, updateBotMemory } from '@/lib/engine/state';
+import { SYSTEM_PROMPTS, BOT_SYSTEM_PROMPTS, buildUserPrompt, buildBotPrompt } from '@/lib/agents/prompts';
 import { getScenarioEvent, getRandomEvent, getRandomEventByType } from '@/lib/engine/events';
 import { getNewsContext } from '@/lib/engine/newsContext';
-import { GeoEvent, EventType } from '@/lib/engine/types';
+import { GeoEvent, EventType, UserBot, BotMessage } from '@/lib/engine/types';
 
 // ── COOLDOWN / ROTATION TRACKING ─────────────────────────────────────────────
 // Persisted in globalThis so it survives across requests in the same process.
@@ -112,6 +112,63 @@ function recordSpeakers(ids: string[]) {
   while (q.length > RECENT_WINDOW * 4) q.shift();
 }
 
+// ── QUERY A SINGLE BOT AGENT ─────────────────────────────────────────────────
+// Bots respond ~40% of ticks when the event type matches their specialty/bias.
+// Each bot uses its own named system prompt and full world-state context.
+async function queryBot(bot: UserBot, event: GeoEvent): Promise<BotMessage | null> {
+  const state = getState();
+  const sys = BOT_SYSTEM_PROMPTS[bot.templateId] || BOT_SYSTEM_PROMPTS.un_special_envoy;
+  const user = buildBotPrompt(bot, event, state);
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  try {
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o-mini', max_tokens: 280, temperature: 0.92,
+      messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
+    });
+    const raw = res.choices[0]?.message?.content || '{}';
+    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim());
+
+    const statement: string = parsed.statement || 'Assessing the situation.';
+    const action: string = parsed.action || 'Monitoring developments.';
+    const confidence: number = Math.min(10, Math.max(1, Number(parsed.confidence) || 6));
+
+    // Update bot memory: record event, statement, mark success based on confidence
+    const success = confidence >= 6;
+    updateBotMemory(bot.id, action, success, event.title, statement, event.region);
+
+    const msg: BotMessage = {
+      id: `botmsg_${bot.id}_${Date.now()}`,
+      botId: bot.id,
+      botName: bot.name,
+      botClass: bot.class,
+      botAlignment: bot.alignment,
+      botPortrait: bot.portrait,
+      content: statement,
+      action,
+      timestamp: Date.now(),
+      cycleId: state.activeCycleId || 'tick',
+      triggerEventId: event.id,
+      confidence,
+    };
+    addBotMessage(msg);
+    return msg;
+  } catch {
+    return null;
+  }
+}
+
+// Decide which deployed bots respond to this event (specialty match + 40% chance)
+function selectRespondingBots(bots: UserBot[], event: GeoEvent): UserBot[] {
+  return bots.filter(bot => {
+    // Always respond if event type is in their bias
+    const biasTypes = Object.keys(bot.eventTypeBias ?? {}) as EventType[];
+    if (biasTypes.includes(event.type)) return Math.random() < 0.65;
+    // Otherwise 25% baseline chance
+    return Math.random() < 0.25;
+  });
+}
+
 // ── QUERY A SINGLE LEADER ─────────────────────────────────────────────────────
 async function queryLeader(leaderId: string, event: GeoEvent) {
   const state = getState();
@@ -210,11 +267,21 @@ export async function POST() {
     toQuery.push(...fallback);
   }
 
-  const results = await Promise.all(toQuery.map(id => queryLeader(id, event)));
-  const responses = results.filter(Boolean) as NonNullable<typeof results[0]>[];
+  // Query leaders and bots in parallel
+  const respondingBots = selectRespondingBots(bots, event);
+  const [leaderResults, botResults] = await Promise.all([
+    Promise.all(toQuery.map(id => queryLeader(id, event))),
+    Promise.all(respondingBots.map(bot => queryBot(bot, event))),
+  ]);
+
+  const responses = leaderResults.filter(Boolean) as NonNullable<typeof leaderResults[0]>[];
+  const botResponses = botResults.filter(Boolean);
 
   recordSpeakers(toQuery);
 
   const messages = applyResponses(responses, event);
-  return NextResponse.json({ ok: true, eventId: event.id, speakers: toQuery, messageCount: messages.length });
+  return NextResponse.json({
+    ok: true, eventId: event.id, speakers: toQuery,
+    messageCount: messages.length, botResponses: botResponses.length,
+  });
 }

@@ -134,17 +134,43 @@ export interface SimulationCycle {
 
 // ── USER BOTS ─────────────────────────────────────────────────────────────────
 export interface BotMemory {
+  // ── Legacy flat fields (kept for compat) ──────────────────────────────────
   pastInfluence: string[];
   successRate: number;
   strategiesUsed: string[];
   lastActions: string[];
   totalInfluenceApplied: number;
+  // ── Short-term: what just happened ────────────────────────────────────────
+  shortTerm?: {
+    recentEvents: string[];       // last 5 event titles this bot reacted to
+    recentStatements: string[];   // last 3 things this bot said
+    lastAction: string | null;
+  };
+  // ── Mid-term: strategic patterns ──────────────────────────────────────────
+  midTerm?: {
+    influenceHistory: string[];   // last 10 influence ops
+    favoredRegions: string[];
+    rivalAgents: string[];        // templateIds of competing bots
+    trustedLeaders: string[];     // leader ids with positive relationship
+  };
+  // ── Long-term: career statistics ──────────────────────────────────────────
+  longTerm?: {
+    successfulInterventions: number;
+    failedInterventions: number;
+    dominantStyle: string | null;   // most used strategy class
+    reputationScore: number;        // -100 to +100
+  };
+  // ── Behavioral state ──────────────────────────────────────────────────────
+  stance?: 'aggressive' | 'neutral' | 'stabilizing' | 'opportunistic';
+  confidence?: number;   // 0-100
 }
 
 export interface UserBot {
   id: string;
   templateId: string;
   name: string;
+  portrait: string;        // emoji portrait
+  description: string;     // one-line bio
   class: BotClass;
   alignment: BotAlignment;
   specialty: BotSpecialty;
@@ -165,6 +191,21 @@ export interface BotInfluenceEntry {
   delta: string;
   timestamp: number;
   region: string;
+}
+
+export interface BotMessage {
+  id: string;
+  botId: string;
+  botName: string;
+  botClass: BotClass;
+  botAlignment: BotAlignment;
+  botPortrait: string;
+  content: string;
+  action: string;
+  timestamp: number;
+  cycleId: string;
+  triggerEventId: string;
+  confidence: number;   // 1-10
 }
 
 // ── HISTORY LOG ──────────────────────────────────────────────────────────────
@@ -204,11 +245,12 @@ export interface WorldState {
   activeLeaderIds: string[];  // currently shown in stack
   breakingIntel: string[];
   // Persistent memory systems
-  historyLog?: HistoryEntry[];         // last 20 major events
-  bots?: UserBot[];                    // user-deployed bots
-  botInfluenceLog?: BotInfluenceEntry[]; // recent bot effects
-  economicStress?: number;             // 0-100 cumulative economic pressure
-  cumulativeDeaths?: number;           // total simulation casualties
+  historyLog?: HistoryEntry[];           // last 20 major events
+  bots?: UserBot[];                      // user-deployed bots
+  botInfluenceLog?: BotInfluenceEntry[]; // recent bot indicator effects
+  botMessages?: BotMessage[];            // bot AI statements in live feed
+  economicStress?: number;               // 0-100 cumulative economic pressure
+  cumulativeDeaths?: number;             // total simulation casualties
   realWorldContext?: {
     summary: string;
     dominantTheme: string;
