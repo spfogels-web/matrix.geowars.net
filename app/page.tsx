@@ -30,9 +30,12 @@ export default function Home() {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab]   = useState<'feed'|'leaders'|'intel'>('feed');
   const [state, setState]           = useState<WorldState | null>(null);
+  const [feedExpanded, setFeedExpanded] = useState(false);
   const [mapExpanded, setMapExpanded]   = useState(false);
+  const [leftExpanded, setLeftExpanded] = useState(false);
   const [chatOpen, setChatOpen]         = useState(false);
   const [botPanelOpen, setBotPanelOpen] = useState(false);
+  const [intelExpanded, setIntelExpanded] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [simStartTime, setSimStartTime] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -490,154 +493,53 @@ export default function Home() {
             </div>
           </header>
 
-          {/* ── Main layout — full-width tabbed ── */}
-          <main className="flex-1 flex flex-col overflow-hidden min-h-0" style={{ position: 'relative' }}>
+          {/* ── Main layout ── */}
+          <main className="flex-1 flex gap-2 p-2 overflow-hidden min-h-0">
 
-            {/* World Briefing — covers main, header stays interactive */}
-            {!state.isRunning && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
-                <WorldBriefing state={state} onInitiate={() => control('start')} />
-              </div>
-            )}
-
-            {/* Map — taller on desktop */}
-            <div className="shrink-0 overflow-hidden panel"
-              style={{ height: '58vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
-              <WorldMap
-                {...mapProps}
-                isExpanded={false}
-                onExpandToggle={() => setMapExpanded(true)}
-                worldState={state}
-                onInitiate={() => control('start')}
+            {/* Left: Leader Stack */}
+            <div className="shrink-0 overflow-hidden transition-all duration-300" style={{ width: leftExpanded ? '500px' : '310px' }}>
+              <LeaderStack
+                leaders={state.leaders.filter(l => state.activeLeaderIds.includes(l.id))}
+                activeIds={state.activeLeaderIds}
+                allLeaders={state.leaders}
+                isRunning={state.isRunning && !state.isPaused}
+                isExpanded={leftExpanded}
+                onToggleExpand={() => setLeftExpanded(v => !v)}
+                messages={state.messages}
               />
             </div>
 
-            {/* Action bar: AGENTS · COMMS · LEADERBOARD · WALLET */}
-            <div className="shrink-0 flex items-stretch gap-0" style={{
-              borderBottom: '1px solid rgba(120,60,255,0.18)',
-              background: 'rgba(6,3,15,0.98)',
-              position: 'relative', zIndex: 55,
-            }}>
-              {/* Agents */}
-              <button onClick={() => setBotPanelOpen(v => !v)}
-                className="flex-1 font-orbitron font-bold"
-                style={{
-                  fontSize: '11px', padding: '10px 8px', letterSpacing: '0.1em',
-                  border: 'none', borderRight: '1px solid rgba(120,60,255,0.15)',
-                  background: botPanelOpen ? 'rgba(180,79,255,0.18)' : 'transparent',
-                  color: botPanelOpen ? '#d090ff' : 'rgba(180,79,255,0.65)',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
-                  animation: botPanelOpen ? 'none' : 'agents-btn-pulse 2.2s ease-in-out infinite',
-                  transition: 'background 0.18s, color 0.18s',
-                }}>
-                🤖 AGENTS
-                {(state.bots ?? []).length > 0 && (
-                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '10px', padding: '1px 7px', fontSize: '10px', fontWeight: 'bold' }}>
-                    {(state.bots ?? []).length}
-                  </span>
-                )}
-              </button>
-
-              {/* Comms */}
-              <button onClick={() => setChatOpen(v => !v)}
-                className="flex-1 font-orbitron font-bold"
-                style={{
-                  fontSize: '11px', padding: '10px 8px', letterSpacing: '0.1em',
-                  border: 'none', borderRight: '1px solid rgba(120,60,255,0.15)',
-                  background: chatOpen ? 'rgba(180,79,255,0.14)' : 'transparent',
-                  color: chatOpen ? '#b44fff' : 'rgba(180,79,255,0.55)',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
-                  transition: 'background 0.18s, color 0.18s',
-                }}>
-                📡 AGENT COMMS
-                {state.messages.length > 0 && (
-                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '50%', width: '18px', height: '18px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold' }}>
-                    {Math.min(state.messages.length, 99)}
-                  </span>
-                )}
-              </button>
-
-              {/* Leaderboard */}
-              <button onClick={() => setShowLeaderboard(true)}
-                className="flex-1 font-orbitron font-bold"
-                style={{
-                  fontSize: '11px', padding: '10px 8px', letterSpacing: '0.1em',
-                  border: 'none', borderRight: '1px solid rgba(120,60,255,0.15)',
-                  background: 'transparent',
-                  color: 'rgba(255,215,0,0.65)',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
-                  transition: 'background 0.18s, color 0.18s',
-                }}>
-                🏆 LEADERBOARD
-              </button>
-
-              {/* Wallet */}
-              <div className="flex-1 flex items-center justify-center" style={{
-                borderLeft: 'none', padding: '6px 8px',
-              }}>
-                <WalletButton />
+            {/* Center: World Map + Live Feed */}
+            <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0 relative">
+              <div className="rounded-xl overflow-hidden panel"
+                style={{ flex: feedExpanded ? '1 1 35%' : '1 1 62%', minHeight: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
+                <WorldMap
+                  {...mapProps}
+                  isExpanded={false}
+                  onExpandToggle={() => setMapExpanded(true)}
+                  worldState={state}
+                  onInitiate={() => control('start')}
+                />
               </div>
-            </div>
-
-            {/* Tab bar */}
-            <div className="shrink-0 flex" style={{
-              height: '46px',
-              background: 'rgba(6,3,15,0.98)',
-              borderBottom: '1px solid rgba(120,60,255,0.18)',
-              position: 'relative', zIndex: 55,
-            }}>
-              {([
-                ['feed',    '📡', 'LIVE FEED'],
-                ['leaders', '👥', 'WORLD LEADERS'],
-                ['intel',   '🔍', 'INTEL MATRIX'],
-              ] as const).map(([tab, icon, label]) => (
-                <button key={tab} onClick={() => setActiveTab(tab)}
-                  className="flex-1 font-orbitron font-bold"
-                  style={{
-                    fontSize: '12px', letterSpacing: '0.15em',
-                    color: activeTab === tab ? '#00f5ff' : 'rgba(200,210,240,0.35)',
-                    background: activeTab === tab ? 'rgba(0,245,255,0.05)' : 'transparent',
-                    border: 'none',
-                    borderBottom: activeTab === tab ? '2px solid #00f5ff' : '2px solid transparent',
-                    cursor: 'pointer',
-                    transition: 'color 0.18s, background 0.18s, border-color 0.18s',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  }}>
-                  <span style={{ fontSize: '15px' }}>{icon}</span>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab content — scrollable */}
-            <div className="flex-1 overflow-y-auto min-h-0" style={{ position: 'relative', zIndex: 55 }}>
-              {activeTab === 'feed' && (
+              <div className="overflow-hidden" style={{ flex: feedExpanded ? '1 1 65%' : '1 1 38%', minHeight: 0 }}>
                 <LiveFeed
                   events={state.events}
                   messages={state.messages}
                   botMessages={state.botMessages ?? []}
-                  isExpanded={true}
-                  onToggle={() => {}}
+                  isExpanded={feedExpanded}
+                  onToggle={() => setFeedExpanded(v => !v)}
                 />
+              </div>
+
+              {/* World Briefing — overlays center column only */}
+              {!state.isRunning && (
+                <WorldBriefing state={state} onInitiate={() => control('start')} />
               )}
-              {activeTab === 'leaders' && (
-                <LeaderStack
-                  leaders={state.leaders.filter(l => state.activeLeaderIds.includes(l.id))}
-                  activeIds={state.activeLeaderIds}
-                  allLeaders={state.leaders}
-                  isRunning={state.isRunning && !state.isPaused}
-                  isExpanded={true}
-                  onToggleExpand={() => {}}
-                  messages={state.messages}
-                />
-              )}
-              {activeTab === 'intel' && (
-                <IntelPanel
-                  state={state}
-                  isExpanded={true}
-                  onToggleExpand={() => {}}
-                />
-              )}
+            </div>
+
+            {/* Right: Intel Panel */}
+            <div className="shrink-0 overflow-hidden transition-all duration-300" style={{ width: intelExpanded ? '520px' : '360px' }}>
+              <IntelPanel state={state} isExpanded={intelExpanded} onToggleExpand={() => setIntelExpanded(v => !v)} />
             </div>
           </main>
         </>
