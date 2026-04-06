@@ -156,15 +156,8 @@ export default function Home() {
       {isMobile ? (
         /* ── MOBILE LAYOUT ─────────────────────────────────────────────── */
         <>
-          {/* World Briefing — full-screen fixed overlay before sim starts */}
-          {!state.isRunning && (
-            <div className="fixed inset-0" style={{ zIndex: 60 }}>
-              <WorldBriefing state={state} onInitiate={() => control('start')} />
-            </div>
-          )}
-
           {/* Mobile header — single row + action row */}
-          <header className="shrink-0" style={{ background: 'rgba(8,3,20,0.98)', borderBottom: '1px solid rgba(120,60,255,0.18)' }}>
+          <header className="shrink-0" style={{ background: 'rgba(8,3,20,0.98)', borderBottom: '1px solid rgba(120,60,255,0.18)', position: 'relative', zIndex: 80 }}>
 
             {/* Row 1: title · tension · threat · status · sim controls */}
             <div className="flex items-center gap-2 px-3" style={{ height: '48px' }}>
@@ -221,7 +214,14 @@ export default function Home() {
           </header>
 
           {/* Mobile main */}
-          <main className="flex-1 flex flex-col overflow-hidden min-h-0">
+          <main className="flex-1 flex flex-col overflow-hidden min-h-0" style={{ position: 'relative' }}>
+
+            {/* World Briefing — covers main area only, header stays interactive */}
+            {!state.isRunning && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
+                <WorldBriefing state={state} onInitiate={() => control('start')} />
+              </div>
+            )}
 
             {/* Map — fixed height */}
             <div className="shrink-0 overflow-hidden panel relative"
@@ -240,6 +240,7 @@ export default function Home() {
               gridTemplateColumns: 'repeat(4, 1fr)',
               background: 'rgba(6,3,15,0.98)',
               borderBottom: '1px solid rgba(120,60,255,0.1)',
+              position: 'relative', zIndex: 55,
             }}>
               <button onClick={() => setBotPanelOpen(v => !v)}
                 className="font-orbitron font-bold"
@@ -308,6 +309,7 @@ export default function Home() {
               height: '42px',
               background: 'rgba(6,3,15,0.98)',
               borderBottom: '1px solid rgba(120,60,255,0.18)',
+              position: 'relative', zIndex: 55,
             }}>
               {([
                 ['feed',    '📡', 'FEED'],
