@@ -804,8 +804,8 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       cinematicRef.current.push(setTimeout(()=>{
         setCinematic(p=>({...p,active:false,phase:'done'}));
         setFeedActive(true);
-        setTimeout(()=>{ cinematicActiveRef.current=false; },7500);
-      },17000));
+        setTimeout(()=>{ cinematicActiveRef.current=false; },6000);
+      },16200));  // report shows 4.7s then sequence ends
     }
 
     if(ev.impact>=9||ev.type==='nuclear'){
@@ -1278,37 +1278,54 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           )}
 
           {cinematic.phase==='report'&&(
-            <div className="absolute inset-0 flex items-center justify-center" style={{zIndex:703}}>
-              <div className="font-mono rounded-2xl px-8 py-7 fade-in" style={{
-                background:'rgba(0,0,0,0.96)',border:`1px solid ${cinematic.color}70`,
-                boxShadow:`0 0 60px ${cinematic.color}30,0 0 120px rgba(0,0,0,0.9)`,
-                backdropFilter:'blur(20px)',maxWidth:'520px',width:'92%'}}>
-                <div className="font-orbitron font-bold mb-1 text-center" style={{color:cinematic.color,fontSize:'11px',letterSpacing:'0.3em'}}>
-                  ■ STRIKE ASSESSMENT REPORT ■
-                </div>
-                <div className="text-center mb-4" style={{color:`${cinematic.color}60`,fontSize:'9px',letterSpacing:'0.2em'}}>
-                  {new Date().toUTCString().slice(0,25).toUpperCase()} UTC
-                </div>
-                <div style={{borderTop:`1px solid ${cinematic.color}30`,paddingTop:'14px'}}>
+            /* Small top-left card — non-blocking, auto-dismisses with countdown bar */
+            <div className="absolute fade-in" style={{top:48,left:12,zIndex:720,width:310,pointerEvents:'none'}}>
+              <div className="rounded-xl overflow-hidden" style={{
+                background:'rgba(0,0,0,0.96)',
+                border:`1.5px solid ${cinematic.color}`,
+                boxShadow:`0 0 28px ${cinematic.color}45,0 4px 24px rgba(0,0,0,0.85)`,
+                backdropFilter:'blur(14px)',
+              }}>
+                {/* Pulsing top bar */}
+                <div style={{height:'3px',background:cinematic.color,animation:'alert-pulse 0.6s ease-in-out infinite'}}/>
+                <div className="px-3.5 py-3">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className="status-blink" style={{display:'inline-block',width:'8px',height:'8px',
+                      borderRadius:'50%',background:cinematic.color,boxShadow:`0 0 8px ${cinematic.color}`,flexShrink:0}}/>
+                    <span className="font-orbitron font-black" style={{
+                      color:cinematic.color,fontSize:'10px',letterSpacing:'0.22em',
+                      textShadow:`0 0 12px ${cinematic.color}`}}>
+                      ■ STRIKE ASSESSMENT
+                    </span>
+                    <span className="font-mono ml-auto" style={{color:'rgba(255,255,255,0.25)',fontSize:'9px'}}>
+                      {new Date().toUTCString().slice(17,22)} UTC
+                    </span>
+                  </div>
+                  {/* Compact data rows */}
                   {[
-                    {l:'EVENT',v:cinematic.label,hi:false},
-                    {l:'STRIKE ORIGIN',v:cinematic.originLabel,hi:false},
-                    {l:'TARGET ZONE',v:cinematic.targetLabel,hi:false},
-                    {l:'TYPE',v:cinematic.eventType.toUpperCase(),hi:false},
-                    {l:'IMPACT LEVEL',v:`${cinematic.impact}/10 — ${cinematic.impact>=9?'CATASTROPHIC':'SEVERE'}`,hi:true},
-                    {l:'CASUALTIES',v:cinematic.casualties,hi:true},
-                    {l:'STATUS',v:'IMPACT CONFIRMED · DAMAGE ASSESSMENT ONGOING',hi:false},
-                  ].map(({l,v,hi})=>(
-                    <div key={l} className="flex gap-3 mb-2.5">
-                      <span style={{color:'rgba(255,255,255,0.3)',fontSize:'10px',width:'110px',flexShrink:0,letterSpacing:'0.08em'}}>{l}</span>
-                      <span style={{color:hi?cinematic.color:'rgba(255,255,255,0.88)',fontSize:'10px',lineHeight:'1.5',fontWeight:hi?'bold':'normal'}}>{v}</span>
+                    {l:'EVENT',    v:cinematic.label.length>38?cinematic.label.slice(0,38)+'…':cinematic.label},
+                    {l:'ORIGIN',   v:cinematic.originLabel},
+                    {l:'TARGET',   v:cinematic.targetLabel},
+                    {l:'IMPACT',   v:`${cinematic.impact}/10 — ${cinematic.impact>=9?'CATASTROPHIC':'SEVERE'}`},
+                    {l:'CASUALTIES',v:cinematic.casualties},
+                  ].map(({l,v})=>(
+                    <div key={l} className="flex gap-2 mb-1">
+                      <span style={{color:'rgba(255,255,255,0.28)',fontSize:'9px',width:'70px',flexShrink:0,letterSpacing:'0.06em'}}>{l}</span>
+                      <span style={{color:l==='IMPACT'||l==='CASUALTIES'?cinematic.color:'rgba(255,255,255,0.82)',
+                        fontSize:'9px',lineHeight:'1.4',fontWeight:l==='IMPACT'?'bold':'normal'}}>{v}</span>
                     </div>
                   ))}
-                </div>
-                <div className="mt-5 py-3 text-center rounded-lg" style={{background:`${cinematic.color}10`,border:`1px solid ${cinematic.color}25`}}>
-                  <div className="font-orbitron" style={{color:cinematic.color,fontSize:'10px',letterSpacing:'0.2em'}}>
-                    INTELLIGENCE FEED INCOMING — SATELLITE COVERAGE ACTIVE
+                  <div className="mt-2 font-mono text-center py-1 rounded" style={{
+                    background:`${cinematic.color}12`,border:`1px solid ${cinematic.color}25`,
+                    color:`${cinematic.color}90`,fontSize:'8px',letterSpacing:'0.12em'}}>
+                    FULL REPORT IN STRIKE LOG ↓
                   </div>
+                </div>
+                {/* Auto-dismiss countdown bar — 4.5s */}
+                <div style={{height:'2px',background:'rgba(255,255,255,0.06)'}}>
+                  <div style={{height:'100%',background:cinematic.color,
+                    animation:'shrink-bar 4.5s linear forwards',transformOrigin:'left'}}/>
                 </div>
               </div>
             </div>
@@ -1333,6 +1350,53 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           <span style={{color:'rgba(255,215,0,0.5)',marginRight:'6px'}}>◆</span>
           {hoveredCity.toUpperCase()}
         </div>
+      )}
+
+      {/* ── Last-strike persistent badge (top-left, clickable → opens strike log) ── */}
+      {strikeLog.length > 0 && !cinematic.active && (
+        <button
+          onClick={() => setStrikeReportOpen(v => !v)}
+          className="absolute fade-in"
+          style={{
+            top: 48, left: 12, zIndex: 510,
+            background: strikeReportOpen ? 'rgba(255,45,85,0.18)' : 'rgba(0,0,0,0.88)',
+            border: `1px solid ${strikeReportOpen ? 'rgba(255,45,85,0.65)' : 'rgba(255,45,85,0.35)'}`,
+            borderRadius: '8px',
+            padding: '7px 12px',
+            backdropFilter: 'blur(12px)',
+            boxShadow: strikeReportOpen ? '0 0 18px rgba(255,45,85,0.35)' : '0 0 8px rgba(0,0,0,0.6)',
+            cursor: 'pointer',
+            transition: 'all 0.25s',
+            display: 'flex', alignItems: 'center', gap: '8px',
+            maxWidth: '220px',
+          }}>
+          <div className="shrink-0" style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: '#ff2d55', boxShadow: '0 0 8px #ff2d55',
+          }} />
+          <div style={{ textAlign: 'left', minWidth: 0 }}>
+            <div className="font-orbitron font-bold" style={{
+              color: '#ff2d55', fontSize: '9px', letterSpacing: '0.18em', lineHeight: 1.2,
+            }}>
+              ⚡ LAST STRIKE
+            </div>
+            <div className="font-mono" style={{
+              color: 'rgba(255,255,255,0.65)', fontSize: '9px', lineHeight: 1.3,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {strikeLog[0].origin} → {strikeLog[0].target}
+            </div>
+          </div>
+          <div className="font-orbitron font-bold shrink-0" style={{
+            color: strikeLog[0].impact >= 9 ? '#ff2d55' : '#ff6a00',
+            fontSize: '14px', marginLeft: 2,
+          }}>
+            {strikeLog[0].impact}
+          </div>
+          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: '10px', flexShrink: 0 }}>
+            {strikeReportOpen ? '▼' : '▲'}
+          </span>
+        </button>
       )}
 
       {/* ── Strike Report Panel (slide up) ── */}
