@@ -18,6 +18,15 @@ export interface GeoEvent {
   timestamp: number;
   cycleId: string;
   isNew?: boolean;
+  // Optional geographic fields — used by map layers and Phase 2 cinematic view
+  lat?: number;         // target latitude
+  lng?: number;         // target longitude
+  originLat?: number;
+  originLng?: number;
+  radiusKm?: number;    // effect radius in km (blackout, EMP)
+  cinematic?: boolean;  // true = eligible for Google Maps cinematic view
+  cityName?: string;    // human-readable target city
+  countryName?: string;
 }
 
 export interface LeaderMessage {

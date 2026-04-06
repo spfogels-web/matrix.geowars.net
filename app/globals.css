@@ -340,3 +340,80 @@ body::before {
   box-shadow: 0 0 20px rgba(255,106,0,0.25), inset 0 0 14px rgba(255,106,0,0.09);
   transform: scale(1.04);
 }
+
+/* ── Mobile overrides (max-width: 767px) ─────────────────────────────────── */
+@media (max-width: 767px) {
+
+  /* Smooth momentum scrolling on iOS */
+  * { -webkit-overflow-scrolling: touch; }
+
+  /* Hide scrollbars on the secondary header row */
+  .mobile-hdr-row2::-webkit-scrollbar { display: none; }
+
+  /* Prevent tap highlight flash on buttons */
+  button, select { -webkit-tap-highlight-color: transparent; }
+
+  /* ── Map internal overlays ──
+     These are positioned with JS inline-styles relative to the map container.
+     Shrink them so they don't crowd the 42vh map. */
+
+  /* Death toll counter (top-right of map) */
+  .absolute[style*="top: 48"] {
+    transform: scale(0.82);
+    transform-origin: top right;
+  }
+
+  /* World population counter (bottom-left of map) */
+  .absolute[style*="bottom: 36"] {
+    transform: scale(0.82);
+    transform-origin: bottom left;
+  }
+
+  /* Bottom HUD bar inside the map — reduce padding */
+  .absolute[style*="zIndex:611"],
+  .absolute[style*="z-index: 611"] {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  /* Crisis log — keep it usable but narrower */
+  .absolute[style*="bottom: 8px"][style*="left: 8px"] {
+    max-width: calc(100vw - 16px);
+  }
+
+  /* Cinematic overlay headers — prevent text overflow */
+  .absolute.inset-0[style*="zIndex: 810"],
+  .absolute.inset-0[style*="zIndex:810"] {
+    font-size: 90%;
+  }
+
+  /* LeaderStack — allow full width scroll */
+  .leader-stack-root,
+  [class*="leader-stack"] {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* IntelPanel — full width */
+  .intel-panel-root,
+  [class*="intel-panel"] {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* LiveFeed — full width */
+  .live-feed-root,
+  [class*="live-feed"] {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Scale down Orbitron large numbers on small screens */
+  .font-orbitron[style*="fontSize: '30px'"],
+  .font-orbitron[style*="font-size: 30px"] {
+    font-size: 22px !important;
+  }
+
+  /* Prevent horizontal page overflow from any overflow element */
+  body { overflow-x: hidden; }
+}

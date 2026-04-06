@@ -3,36 +3,18 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { ConflictZone, GeoEvent, Leader, WorldState } from '@/lib/engine/types';
+import { REGION_COORDS, LEADER_COORDS, LEADER_NAMES, LEADER_FLAGS } from '@/lib/engine/mapConstants';
 import CrisisLog from './CrisisLog';
 import CinematicFeed from './CinematicFeed';
 import NewsMarquee from './NewsMarquee';
+import BlackoutLayer, { BlackoutZone } from './layers/BlackoutLayer';
+import EventFocusController from './layers/EventFocusController';
+import MissileArcLayer from './layers/MissileArcLayer';
+import ImpactPulseLayer from './layers/ImpactPulseLayer';
+import CinematicGoogleMap from './layers/CinematicGoogleMap';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const REGION_COORDS: Record<string, [number, number]> = {
-  'Taiwan Strait':[121.0,23.5],'Eastern Europe':[31.0,50.5],'Persian Gulf':[51.5,26.5],
-  'Korean Peninsula':[127.5,38.5],'Gaza & Lebanon':[35.5,32.5],'South China Sea':[113.0,12.0],
-  'Arctic':[15.0,78.0],'Global':[0.0,20.0],'Middle East':[45.0,30.0],'Europe':[15.0,50.0],
-  'Asia-Pacific':[135.0,25.0],'Asia':[90.0,35.0],'Pacific':[170.0,15.0],
-};
-const LEADER_COORDS: Record<string, [number, number]> = {
-  usa:[-98,38],china:[104,35],russia:[90,60],iran:[54,32],israel:[35,31.5],
-  uk:[-1,52],france:[2,46],germany:[10,51],turkey:[35,39],saudiarabia:[45,24],
-  india:[78,20],pakistan:[70,30],japan:[138,36],southkorea:[128,36],
-  northkorea:[127,40],ukraine:[31,49],taiwan:[121,23.5],nato:[15,50],
-  europe:[15,50],un:[0,20],imf:[-77,38.9],
-};
-const LEADER_NAMES: Record<string, string> = {
-  usa:'USA',china:'CHINA',russia:'RUSSIA',iran:'IRAN',israel:'ISRAEL',
-  uk:'UK',france:'FRANCE',germany:'GERMANY',turkey:'TÜRKIYE',saudiarabia:'SAUDI ARABIA',
-  india:'INDIA',pakistan:'PAKISTAN',japan:'JAPAN',southkorea:'S.KOREA',
-  northkorea:'N.KOREA',ukraine:'UKRAINE',taiwan:'TAIWAN',nato:'NATO',
-};
-const LEADER_FLAGS: Record<string, string> = {
-  usa:'🇺🇸',china:'🇨🇳',russia:'🇷🇺',iran:'🇮🇷',israel:'🇮🇱',uk:'🇬🇧',
-  france:'🇫🇷',germany:'🇩🇪',turkey:'🇹🇷',saudiarabia:'🇸🇦',india:'🇮🇳',
-  pakistan:'🇵🇰',japan:'🇯🇵',southkorea:'🇰🇷',northkorea:'🇰🇵',
-  ukraine:'🇺🇦',taiwan:'🇹🇼',nato:'🏛',
-};
+// REGION_COORDS, LEADER_COORDS, LEADER_NAMES, LEADER_FLAGS imported from @/lib/engine/mapConstants
 // Named naval vessels: [lng, lat, shipName, type]
 const NAVAL_VESSELS: Record<string, [number,number,string,'carrier'|'destroyer'|'frigate'][]> = {
   usa:[
@@ -92,10 +74,15 @@ interface StrikeRecord {
   id:string; title:string; origin:string; target:string;
   type:string; impact:number; timestamp:number; color:string;
 }
+// Tracks active cyber/EMP events for the blackout overlay
+interface ActiveBlackout {
+  id:string; lat:number; lng:number; radiusKm:number;
+  color:string; label:string; type:'cyber'|'emp'|'blackout';
+  createdAt:number; duration:number;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function lerp(a:number,b:number,t:number){ return a+(b-a)*t; }
-function easeInOut(t:number){ return t<0.5?2*t*t:-1+(4-2*t)*t; }
+// lerp / easeInOut live in ImpactPulseLayer — not needed here
 function getUnitConfig(ev:GeoEvent){
   const t=(ev.title+ev.description).toLowerCase();
   if(ev.type==='nuclear') return {kind:'nuclear' as UnitKind,speed:0.004};
@@ -160,14 +147,13 @@ function playSound(soundType:string, impact:number, ctxRef:React.MutableRefObjec
 interface OverlayProps {
   map: L.Map;
   mapVersion: number;
-  units: MapUnit[];
-  arcs: Arc[];
   leaders: Leader[];
   conflictZones: ConflictZone[];
   isRunning: boolean;
   tension: number;
 }
-function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tension }: OverlayProps) {
+function GameOverlay({ map, mapVersion, leaders, conflictZones, isRunning, tension }: OverlayProps) {
+  void mapVersion; // forces re-render on map pan/zoom
   const size = map.getSize();
   const W = size.x, H = size.y;
   const [hoveredVessel, setHoveredVessel] = useState<{label:string;x:number;y:number}|null>(null);
@@ -224,80 +210,8 @@ function GameOverlay({ map, units, arcs, leaders, conflictZones, isRunning, tens
         </filter>
       </defs>
 
-      {/* ── Arcs — glowing Bezier trails ── */}
-      {arcs.map(arc=>{
-        const [x1,y1]=px(arc.from[0],arc.from[1]);
-        const [x2,y2]=px(arc.to[0],arc.to[1]);
-        const mx=(x1+x2)/2, dist=Math.sqrt((x2-x1)**2+(y2-y1)**2);
-        const my=(y1+y2)/2-Math.max(30,dist*0.3);
-        const d=`M${x1},${y1} Q${mx},${my} ${x2},${y2}`;
-        const pathLen=Math.round(dist*1.3);
-        return(
-          <g key={arc.id} filter="url(#arc-glow)">
-            {/* Glow halo */}
-            <path d={d} fill="none" stroke={arc.color} strokeWidth={5} strokeOpacity={0.18} strokeLinecap="round"/>
-            {/* Core line */}
-            <path d={d} fill="none" stroke={arc.color} strokeWidth={1.5} strokeOpacity={0.9}
-              strokeDasharray="8,5" strokeLinecap="round"/>
-            {/* Animated travelling pulse */}
-            <path id={`arc-path-${arc.id}`} d={d} fill="none"/>
-            <circle r="3.5" fill={arc.color} opacity="0.95" filter="url(#glow-sm)">
-              <animateMotion dur="2.5s" repeatCount="indefinite" rotate="auto">
-                <mpath href={`#arc-path-${arc.id}`}/>
-              </animateMotion>
-            </circle>
-            {/* Origin dot */}
-            <circle cx={x1} cy={y1} r="4" fill={arc.color} opacity="0.7" filter="url(#glow-sm)"/>
-            {/* Destination ring */}
-            <circle cx={x2} cy={y2} r="0" fill="none" stroke={arc.color} strokeWidth="1.5">
-              <animate attributeName="r" values={`0;${Math.max(12,pathLen*0.04)}`} dur="1.2s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0.8;0" dur="1.2s" repeatCount="indefinite"/>
-            </circle>
-          </g>
-        );
-      })}
-
-      {/* ── Moving units ── */}
-      {units.map(u=>{
-        const t=easeInOut(Math.min(u.progress,1));
-        const [ux,uy]=px(lerp(u.from[0],u.to[0],t),lerp(u.from[1],u.to[1],t));
-        if(u.exploding){
-          const r=10+u.progress*60;
-          const op=Math.max(0,0.9-u.progress);
-          return(
-            <g key={u.id} filter="url(#glow-md)">
-              <circle cx={ux} cy={uy} r={r} fill="none" stroke={u.color} strokeWidth={2.5} opacity={op}/>
-              <circle cx={ux} cy={uy} r={r*0.55} fill={u.color} opacity={Math.max(0,0.65-u.progress)}/>
-              <circle cx={ux} cy={uy} r={r*0.8} fill="none" stroke={u.color} strokeWidth={1} opacity={Math.max(0,0.4-u.progress*0.6)}/>
-              {/* Secondary ring */}
-              <circle cx={ux} cy={uy} r={r*1.4} fill="none" stroke={u.color} strokeWidth={0.8} opacity={Math.max(0,0.25-u.progress*0.3)}/>
-              {/* Core flash */}
-              <circle cx={ux} cy={uy} r={r*0.2} fill="white" opacity={Math.max(0,0.9-u.progress*2)}/>
-            </g>
-          );
-        }
-        const sym = u.kind==='nuclear'?'☢':u.kind==='submarine'?'◎':u.kind==='naval'?'⚓':u.kind==='missile'?'▶':u.kind==='troops'?'▲':'✈';
-        return(
-          <g key={u.id} transform={`translate(${ux},${uy})`} filter="url(#glow-sm)">
-            {/* Glow halo */}
-            <circle r={9} fill={u.color} opacity={0.12}/>
-            {/* Core dot */}
-            <circle r={4} fill={u.color} opacity={0.95}/>
-            <circle r={2} fill="white" opacity={0.8}/>
-            {/* Symbol */}
-            <text textAnchor="middle" y={-10} style={{fontSize:'11px',fill:u.color,fontFamily:'Share Tech Mono, monospace',fontWeight:'bold'}}>
-              {sym}
-            </text>
-            {/* Label */}
-            <text textAnchor="middle" y={18} style={{
-              fontSize:'7px',fill:'rgba(255,255,255,0.7)',fontFamily:'Share Tech Mono, monospace',
-              paintOrder:'stroke',stroke:'rgba(0,0,0,0.9)',strokeWidth:'2px',
-            }}>
-              {u.originLabel}
-            </text>
-          </g>
-        );
-      })}
+      {/* ── Arcs and moving units rendered by dedicated layer components ── */}
+      {/* See MissileArcLayer and ImpactPulseLayer mounted in WorldMapLeaflet */}
 
       {/* ── Conflict zone pulses ── */}
       {conflictZones.map(zone=>{
@@ -645,10 +559,12 @@ interface Props {
   breakingIntel?: string[];
   worldState?: WorldState;
   onInitiate?: () => void;
+  /** When set, the map pans/zooms to this event's location */
+  focusedEvent?: GeoEvent | null;
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[], worldState }: Props) {
+export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[], worldState, focusedEvent }: Props) {
   const [arcs, setArcs]   = useState<Arc[]>([]);
   const [units, setUnits] = useState<MapUnit[]>([]);
   const [flashColor, setFlashColor] = useState<string|null>(null);
@@ -660,6 +576,8 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const [strikeLog, setStrikeLog] = useState<StrikeRecord[]>([]);
   const [strikeReportOpen, setStrikeReportOpen] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
+  const [activeBlackouts, setActiveBlackouts] = useState<ActiveBlackout[]>([]);
+  const [gmapEvent, setGmapEvent] = useState<GeoEvent | null>(null);
 
   type CinPhase = 'alert'|'zoom'|'missile'|'impact'|'shockwave'|'report'|'done';
   const [cinematic, setCinematic] = useState<{
@@ -682,7 +600,6 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const unitsRef           = useRef<MapUnit[]>([]);
   const lastEvIdRef        = useRef<string|null>(null);
   const cinematicActiveRef = useRef(false);
-  const lastPanTimeRef     = useRef(0);
 
   // ── Initialize Leaflet map imperatively (no react-leaflet) ─────────────────
   useEffect(() => {
@@ -740,6 +657,16 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     return()=>{if(unitAnimRef.current) clearInterval(unitAnimRef.current);};
   },[]);
 
+  // ── Expire old blackout zones every 2s ────────────────────────────────────
+  useEffect(()=>{
+    const id=setInterval(()=>{
+      setActiveBlackouts(prev=>prev.filter(b=>Date.now()-b.createdAt<b.duration));
+    },2000);
+    return()=>clearInterval(id);
+  },[]);
+
+  // External event focus delegated to EventFocusController
+
   // ── Event handler ──────────────────────────────────────────────────────────
   useEffect(()=>{
     if(!isRunning||events.length===0) return;
@@ -761,8 +688,13 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       },...prev].slice(0,50));
     }
 
-    // ── Cinematic (impact >= 9 only, no concurrent) ──
-    const isMajorStrike = ev.impact>=9 && (ev.type==='military'||ev.type==='nuclear') && !cinematicActiveRef.current;
+    // ── Google Maps satellite cinematic (cinematic=true events) ──────────
+    if (ev.cinematic && !cinematicActiveRef.current) {
+      setGmapEvent(ev);
+    }
+
+    // ── SVG Cinematic (impact >= 9, only when NOT a Google Maps cinematic) ──
+    const isMajorStrike = ev.impact>=9 && (ev.type==='military'||ev.type==='nuclear') && !ev.cinematic && !cinematicActiveRef.current;
     if(isMajorStrike){
       cinematicActiveRef.current=true;
       cinematicRef.current.forEach(t=>clearTimeout(t));
@@ -831,40 +763,26 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     setArcs(newArcs);
     setTimeout(()=>setArcs([]),6000);
 
-    const now=Date.now();
-    if(ev.impact>=7&&(now-lastPanTimeRef.current)>20000&&leafletMapRef.current){
-      lastPanTimeRef.current=now;
-      const map=leafletMapRef.current;
-
-      // Frame BOTH origin and target so the full strike corridor is visible
-      const targetLid2=ev.affectedLeaders[1];
-      const dest2=targetLid2
-        ?(LEADER_COORDS[targetLid2]||REGION_COORDS[ev.region]||origin)
-        :(REGION_COORDS[ev.region]||origin);
-
-      const originLL=L.latLng(origin[1],origin[0]);
-      const destLL=L.latLng(dest2[1],dest2[0]);
-
-      // If origin === dest (same country event), just fly to that point zoomed in
-      const isSamePoint=originLL.distanceTo(destLL)<500000; // < 500 km apart
-      if(isSamePoint){
-        map.flyTo(destLL, ev.impact>=9?7:6, {duration:3,easeLinearity:0.2});
-      } else {
-        // fitBounds frames both countries with padding — auto-picks zoom
-        const bounds=L.latLngBounds([originLL,destLL]);
-        map.flyToBounds(bounds,{
-          padding:[60,60],
-          maxZoom: ev.impact>=9?7:6,
-          duration:3,
-          easeLinearity:0.2,
-        });
-      }
-
-      // Return to overview after cinematic
-      setTimeout(()=>{
-        if(leafletMapRef.current) leafletMapRef.current.flyTo(L.latLng(35,30),4,{duration:4,easeLinearity:0.25});
-      },16000);
+    // ── Blackout / EMP overlay ─────────────────────────────────────────────
+    const isCyberOrEmp=ev.type==='cyber'||(ev.type==='nuclear'&&(ev.title+ev.description).toLowerCase().includes('emp'));
+    if(isCyberOrEmp||ev.type==='intelligence'&&ev.impact>=8){
+      const tLid=ev.affectedLeaders[0];
+      const coords=(ev.lat&&ev.lng)?[ev.lng,ev.lat]:(LEADER_COORDS[tLid]||REGION_COORDS[ev.region]||[0,20]);
+      const isEmp=(ev.title+ev.description).toLowerCase().includes('emp');
+      const newZone:ActiveBlackout={
+        id:`bo_${ev.id}`,
+        lat:coords[1], lng:coords[0],
+        radiusKm:ev.radiusKm??(350+ev.impact*55),
+        color:ev.type==='cyber'?'#00f5ff':'#b44fff',
+        label:ev.cityName??ev.region??ev.title.slice(0,20),
+        type:isEmp?'emp':'cyber',
+        createdAt:Date.now(),
+        duration:14000,
+      };
+      setActiveBlackouts(prev=>[...prev.filter(b=>b.id!==newZone.id).slice(-3),newZone]);
     }
+
+    // Pan logic delegated to EventFocusController
 
     return()=>{ cinematicRef.current.forEach(t=>clearTimeout(t)); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -890,6 +808,22 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const cinArcPath=`M ${cinOx.toFixed(0)},${cinOy.toFixed(0)} Q ${cinMidX.toFixed(0)},${cinMidY.toFixed(0)} ${cinTx.toFixed(0)},${cinTy.toFixed(0)}`;
   const cinLx=Math.min(cinematic.cinW-80,Math.max(10,cinTx+10));
   const cinLy=Math.max(20,cinTy-14);
+
+  // ── Compute blackout zones in pixel space (re-runs on every map move via mapVersion) ──
+  void mapVersion; // dependency — re-evaluates on map pan/zoom
+  const mapW=mapDivRef.current?.clientWidth??0;
+  const mapH=mapDivRef.current?.clientHeight??0;
+  const blackoutPixelZones:BlackoutZone[]=leafletMap?activeBlackouts.map(b=>{
+    try{
+      const center=leafletMap.latLngToContainerPoint(L.latLng(b.lat,b.lng));
+      // Project a point 1° north to get a pixel/degree ratio, then scale by radius
+      const northPt=leafletMap.latLngToContainerPoint(L.latLng(b.lat+1,b.lng));
+      const pxPerDeg=Math.abs(center.y-northPt.y);
+      const r=Math.max(45,pxPerDeg*(b.radiusKm/111));
+      return{id:b.id,cx:center.x,cy:center.y,r,color:b.color,label:b.label,
+        type:b.type,createdAt:b.createdAt,duration:b.duration};
+    }catch{return null;}
+  }).filter(Boolean) as BlackoutZone[]:[];
 
   return (
     <div
@@ -1057,17 +991,40 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       {/* ── WORLD POPULATION — bottom left ── */}
       <WorldPopCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} />
 
-      {/* ── Animated game overlay (SVG) ── */}
+      {/* ── Animated game overlay: conflict zones, leaders, naval, subs ── */}
       {leafletMap && (
         <GameOverlay
           map={leafletMap}
           mapVersion={mapVersion}
-          units={units}
-          arcs={arcs}
           leaders={leaders}
           conflictZones={conflictZones}
           isRunning={isRunning}
           tension={tension}
+        />
+      )}
+
+      {/* ── Missile arc layer ── */}
+      {leafletMap && arcs.length > 0 && (
+        <MissileArcLayer arcs={arcs} map={leafletMap} mapVersion={mapVersion} />
+      )}
+
+      {/* ── Impact pulse layer ── */}
+      {leafletMap && units.length > 0 && (
+        <ImpactPulseLayer units={units} map={leafletMap} mapVersion={mapVersion} />
+      )}
+
+      {/* ── Blackout / EMP overlay (cyber + EMP events) ── */}
+      {blackoutPixelZones.length>0 && (
+        <BlackoutLayer zones={blackoutPixelZones} width={mapW} height={mapH} />
+      )}
+
+      {/* ── Event focus controller (pan/zoom on new events) ── */}
+      {leafletMap && (
+        <EventFocusController
+          events={events}
+          isRunning={isRunning}
+          map={leafletMap}
+          focusedEvent={focusedEvent}
         />
       )}
 
@@ -1423,7 +1380,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
             </div>
           )}
           <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-            {strikeLog.map((s,i)=>{
+            {strikeLog.map((s)=>{
               const ec=s.impact>=9?'#ff2d55':s.impact>=7?'#ff6a00':s.impact>=5?'#ffd700':'#00ff9d';
               return(
                 <div key={s.id} style={{
@@ -1449,6 +1406,14 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           </div>
         </div>
       </div>
+
+      {/* ── Google Maps satellite cinematic overlay ── */}
+      {gmapEvent && (
+        <CinematicGoogleMap
+          event={gmapEvent}
+          onClose={() => setGmapEvent(null)}
+        />
+      )}
 
       {/* ── Bottom HUD ── */}
       <div className="absolute bottom-0 left-0 right-0" style={{
