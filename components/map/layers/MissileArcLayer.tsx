@@ -44,11 +44,13 @@ export default function MissileArcLayer({ arcs, map, mapVersion }: Props) {
     <svg
       style={{
         position: 'absolute', top: 0, left: 0,
-        width: W, height: H,
+        width: '100%', height: '100%',
         pointerEvents: 'none',
         zIndex: 510,
         overflow: 'visible',
       }}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
     >
       <defs>
         <filter id="ma-arc-glow" x="-30%" y="-30%" width="160%" height="160%">

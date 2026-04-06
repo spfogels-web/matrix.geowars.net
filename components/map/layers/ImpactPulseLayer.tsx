@@ -59,11 +59,13 @@ export default function ImpactPulseLayer({ units, map, mapVersion }: Props) {
     <svg
       style={{
         position: 'absolute', top: 0, left: 0,
-        width: W, height: H,
+        width: '100%', height: '100%',
         pointerEvents: 'none',
         zIndex: 515,
         overflow: 'visible',
       }}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
     >
       <defs>
         <filter id="ip-glow-sm" x="-50%" y="-50%" width="200%" height="200%">
