@@ -218,13 +218,29 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Row 2: AGENTS · COMMS · LEADERBOARD · WALLET — equal-width grid */}
-            <div className="grid px-2 pb-1.5 gap-1.5" style={{
+          </header>
+
+          {/* Mobile main */}
+          <main className="flex-1 flex flex-col overflow-hidden min-h-0">
+
+            {/* Map — fixed height */}
+            <div className="shrink-0 overflow-hidden panel relative"
+              style={{ height: '38vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
+              <WorldMap
+                {...mapProps}
+                isExpanded={false}
+                onExpandToggle={() => setMapExpanded(true)}
+                worldState={state}
+                onInitiate={() => control('start')}
+              />
+            </div>
+
+            {/* Action bar: AGENTS · COMMS · LEADERBOARD · WALLET */}
+            <div className="shrink-0 grid px-2 py-1.5 gap-1.5" style={{
               gridTemplateColumns: 'repeat(4, 1fr)',
-              borderTop: '1px solid rgba(120,60,255,0.1)',
-              paddingTop: '6px',
+              background: 'rgba(6,3,15,0.98)',
+              borderBottom: '1px solid rgba(120,60,255,0.1)',
             }}>
-              {/* Agents */}
               <button onClick={() => setBotPanelOpen(v => !v)}
                 className="font-orbitron font-bold"
                 style={{
@@ -245,7 +261,6 @@ export default function Home() {
                 )}
               </button>
 
-              {/* Comms */}
               <button onClick={() => setChatOpen(v => !v)}
                 className="font-orbitron font-bold"
                 style={{
@@ -265,7 +280,6 @@ export default function Home() {
                 )}
               </button>
 
-              {/* Leaderboard */}
               <button onClick={() => setShowLeaderboard(true)}
                 className="font-orbitron font-bold"
                 style={{
@@ -280,32 +294,13 @@ export default function Home() {
                 BOARD
               </button>
 
-              {/* Wallet */}
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                fontSize: '9px', borderRadius: '7px',
-                border: '1px solid rgba(0,245,255,0.2)',
-                background: 'rgba(0,245,255,0.04)',
-                padding: '4px',
+                borderRadius: '7px', border: '1px solid rgba(0,245,255,0.2)',
+                background: 'rgba(0,245,255,0.04)', padding: '4px',
               }}>
                 <WalletButton />
               </div>
-            </div>
-          </header>
-
-          {/* Mobile main */}
-          <main className="flex-1 flex flex-col overflow-hidden min-h-0">
-
-            {/* Map — fixed height */}
-            <div className="shrink-0 overflow-hidden panel relative"
-              style={{ height: '38vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
-              <WorldMap
-                {...mapProps}
-                isExpanded={false}
-                onExpandToggle={() => setMapExpanded(true)}
-                worldState={state}
-                onInitiate={() => control('start')}
-              />
             </div>
 
             {/* Tab bar */}
