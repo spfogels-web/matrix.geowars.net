@@ -15,15 +15,6 @@ import { WorldState } from '@/lib/engine/types';
 import WorldBriefing from '@/components/map/WorldBriefing';
 import BotPanel from '@/components/bots/BotPanel';
 
-const SCENARIOS = [
-  { id: 'global_tension',    label: 'Global Tension' },
-  { id: 'taiwan_crisis',     label: 'Taiwan Crisis' },
-  { id: 'hormuz_blockade',   label: 'Hormuz Blockade' },
-  { id: 'nato_conflict',     label: 'NATO Conflict' },
-  { id: 'nuclear_standoff',  label: 'Nuclear Standoff' },
-  { id: 'economic_collapse', label: 'Economic Collapse' },
-  { id: 'middle_east_war',   label: 'Middle East War' },
-];
 
 async function runTick(pendingRef: React.MutableRefObject<boolean>, setProcessing: (v: boolean) => void) {
   if (pendingRef.current) return;
@@ -165,10 +156,17 @@ export default function Home() {
       {isMobile ? (
         /* ── MOBILE LAYOUT ─────────────────────────────────────────────── */
         <>
-          {/* Mobile header — two compact rows */}
+          {/* World Briefing — full-screen fixed overlay before sim starts */}
+          {!state.isRunning && (
+            <div className="fixed inset-0" style={{ zIndex: 60 }}>
+              <WorldBriefing state={state} onInitiate={() => control('start')} />
+            </div>
+          )}
+
+          {/* Mobile header — single row + action row */}
           <header className="shrink-0" style={{ background: 'rgba(8,3,20,0.98)', borderBottom: '1px solid rgba(120,60,255,0.18)' }}>
 
-            {/* Row 1: title · tension · status · action buttons */}
+            {/* Row 1: title · tension · threat · status · sim controls */}
             <div className="flex items-center gap-2 px-3" style={{ height: '48px' }}>
               <div className="flex items-center gap-1.5 shrink-0">
                 <div className="w-2 h-2 rounded-full status-blink" style={{ backgroundColor: tc, boxShadow: `0 0 8px ${tc}` }} />
@@ -220,64 +218,78 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Row 2: secondary actions — horizontally scrollable */}
-            <div className="flex items-center gap-2 px-3 overflow-x-auto" style={{
-              height: '38px',
+            {/* Row 2: AGENTS · COMMS · LEADERBOARD · WALLET — equal-width grid */}
+            <div className="grid px-2 pb-1.5 gap-1.5" style={{
+              gridTemplateColumns: 'repeat(4, 1fr)',
               borderTop: '1px solid rgba(120,60,255,0.1)',
-              scrollbarWidth: 'none',
+              paddingTop: '6px',
             }}>
               {/* Agents */}
               <button onClick={() => setBotPanelOpen(v => !v)}
-                className="shrink-0 font-orbitron font-bold"
+                className="font-orbitron font-bold"
                 style={{
-                  fontSize: '10px', padding: '4px 10px', borderRadius: '6px', whiteSpace: 'nowrap',
-                  border: botPanelOpen ? '1px solid #b44fff' : '1px solid rgba(180,79,255,0.5)',
-                  background: botPanelOpen ? 'rgba(180,79,255,0.22)' : 'rgba(180,79,255,0.08)',
-                  color: '#d090ff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
+                  fontSize: '9px', padding: '6px 4px', borderRadius: '7px',
+                  border: botPanelOpen ? '1px solid #b44fff' : '1px solid rgba(180,79,255,0.4)',
+                  background: botPanelOpen ? 'rgba(180,79,255,0.22)' : 'rgba(180,79,255,0.07)',
+                  color: '#d090ff', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
                   animation: botPanelOpen ? 'none' : 'agents-btn-pulse 2.2s ease-in-out infinite',
+                  letterSpacing: '0.08em',
                 }}>
-                🤖 AGENTS
+                <span style={{ fontSize: '15px', lineHeight: 1 }}>🤖</span>
+                AGENTS
                 {(state.bots ?? []).length > 0 && (
-                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '8px', padding: '0 5px', fontSize: '9px', fontWeight: 'bold' }}>
+                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '8px', padding: '0 4px', fontSize: '8px', fontWeight: 'bold', lineHeight: '13px' }}>
                     {(state.bots ?? []).length}
                   </span>
                 )}
               </button>
 
               {/* Comms */}
-              <button onClick={() => setChatOpen(v => !v)} className="hdr-btn hdr-btn-purple shrink-0"
-                style={{ fontSize: '10px', padding: '4px 10px', whiteSpace: 'nowrap' }}>
-                📡 COMMS
+              <button onClick={() => setChatOpen(v => !v)}
+                className="font-orbitron font-bold"
+                style={{
+                  fontSize: '9px', padding: '6px 4px', borderRadius: '7px',
+                  border: chatOpen ? '1px solid rgba(180,79,255,0.7)' : '1px solid rgba(120,60,255,0.3)',
+                  background: chatOpen ? 'rgba(180,79,255,0.16)' : 'rgba(120,60,255,0.06)',
+                  color: chatOpen ? '#b44fff' : 'rgba(180,79,255,0.7)', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+                  letterSpacing: '0.08em',
+                }}>
+                <span style={{ fontSize: '15px', lineHeight: 1 }}>📡</span>
+                COMMS
                 {state.messages.length > 0 && (
-                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '50%', width: '15px', height: '15px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold' }}>
+                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '8px', padding: '0 4px', fontSize: '8px', fontWeight: 'bold', lineHeight: '13px' }}>
                     {Math.min(state.messages.length, 99)}
                   </span>
                 )}
               </button>
 
               {/* Leaderboard */}
-              <button onClick={() => setShowLeaderboard(true)} className="hdr-btn hdr-btn-gold shrink-0"
-                style={{ fontSize: '10px', padding: '4px 10px', whiteSpace: 'nowrap' }}>
-                🏆
+              <button onClick={() => setShowLeaderboard(true)}
+                className="font-orbitron font-bold"
+                style={{
+                  fontSize: '9px', padding: '6px 4px', borderRadius: '7px',
+                  border: '1px solid rgba(255,215,0,0.3)',
+                  background: 'rgba(255,215,0,0.06)',
+                  color: 'rgba(255,215,0,0.8)', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+                  letterSpacing: '0.08em',
+                }}>
+                <span style={{ fontSize: '15px', lineHeight: 1 }}>🏆</span>
+                BOARD
               </button>
 
               {/* Wallet */}
-              <div className="shrink-0"><WalletButton /></div>
-
-              {/* Scenario */}
-              <select
-                value={state.activeScenario}
-                onChange={e => control('scenario', e.target.value)}
-                disabled={state.isRunning}
-                className="font-mono rounded border shrink-0"
-                style={{
-                  background: 'rgba(8,3,20,0.9)', color: 'rgba(180,79,255,0.8)',
-                  borderColor: 'rgba(120,60,255,0.3)', fontSize: '10px', padding: '3px 6px',
-                  cursor: state.isRunning ? 'not-allowed' : 'pointer',
-                  opacity: state.isRunning ? 0.5 : 1,
-                }}>
-                {SCENARIOS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-              </select>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                fontSize: '9px', borderRadius: '7px',
+                border: '1px solid rgba(0,245,255,0.2)',
+                background: 'rgba(0,245,255,0.04)',
+                padding: '4px',
+              }}>
+                <WalletButton />
+              </div>
             </div>
           </header>
 
@@ -286,7 +298,7 @@ export default function Home() {
 
             {/* Map — fixed height */}
             <div className="shrink-0 overflow-hidden panel relative"
-              style={{ height: '42vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
+              style={{ height: '38vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
               <WorldMap
                 {...mapProps}
                 isExpanded={false}
@@ -294,9 +306,6 @@ export default function Home() {
                 worldState={state}
                 onInitiate={() => control('start')}
               />
-              {!state.isRunning && (
-                <WorldBriefing state={state} onInitiate={() => control('start')} />
-              )}
             </div>
 
             {/* Tab bar */}
@@ -463,20 +472,6 @@ export default function Home() {
 
             {/* Wallet */}
             <WalletButton />
-
-            <select
-              value={state.activeScenario}
-              onChange={e => control('scenario', e.target.value)}
-              disabled={state.isRunning}
-              className="font-mono rounded border px-2 py-2 shrink-0"
-              style={{
-                background: 'rgba(8,3,20,0.9)', color: 'rgba(180,79,255,0.85)',
-                borderColor: 'rgba(120,60,255,0.3)', fontSize: '12px',
-                cursor: state.isRunning ? 'not-allowed' : 'pointer',
-                opacity: state.isRunning ? 0.5 : 1,
-              }}>
-              {SCENARIOS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
 
             <div className="h-8 w-px shrink-0" style={{ background: 'rgba(120,60,255,0.25)' }} />
 
