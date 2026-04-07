@@ -1,5 +1,188 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { WorldState } from '@/lib/engine/types';
+
+interface NewsHeadline { title: string; url: string; source: string; }
+
+const SOURCE_COLOR: Record<string, string> = {
+  BBC:         '#bb1919',
+  NYT:         '#e4e4e4',
+  Reuters:     '#ff7b00',
+  'Al Jazeera':'#009f47',
+  'Al-Monitor':'#3577b8',
+  'Trump/TS':  '#e8232a',
+};
+const SOURCE_BG: Record<string, string> = {
+  BBC:         'rgba(187,25,25,0.18)',
+  NYT:         'rgba(255,255,255,0.10)',
+  Reuters:     'rgba(255,123,0,0.18)',
+  'Al Jazeera':'rgba(0,159,71,0.18)',
+  'Al-Monitor':'rgba(53,119,184,0.18)',
+  'Trump/TS':  'rgba(232,35,42,0.22)',
+};
+
+function LiveNewsSection() {
+  const [headlines, setHeadlines] = useState<NewsHeadline[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch('/api/news');
+        const data = await res.json();
+        if (!cancelled) {
+          setHeadlines(data.headlines ?? []);
+          setFetchedAt(Date.now());
+        }
+      } catch { /* silent */ } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    // Refresh every 5 minutes
+    const id = setInterval(load, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  return (
+    <div className="mb-5 relative rounded-xl overflow-hidden" style={{ padding: '14px', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(0,200,255,0.15)' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg,rgba(0,200,255,0.5),transparent)' }} />
+        <span className="font-orbitron font-bold" style={{ color: '#ffffff', fontSize: '12px', letterSpacing: '0.18em', whiteSpace: 'nowrap' }}>LIVE WORLD NEWS</span>
+        <div className="h-px w-6" style={{ background: 'rgba(0,200,255,0.5)' }} />
+      </div>
+
+      {fetchedAt && (
+        <div className="font-mono mb-2" style={{ color: 'rgba(0,200,255,0.35)', fontSize: '8px', letterSpacing: '0.14em' }}>
+          ◉ BBC · NYT · REUTERS · AL JAZEERA · AL-MONITOR · <span style={{ color: 'rgba(232,35,42,0.55)' }}>🇺🇸 TRUMP/TS</span> &nbsp;·&nbsp; {new Date(fetchedAt).toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit'})} UTC
+        </div>
+      )}
+
+      {loading && (
+        <div className="font-mono" style={{ color: 'rgba(0,200,255,0.35)', fontSize: '11px', textAlign: 'center', padding: '12px 0' }}>
+          PULLING LIVE INTELLIGENCE…
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        {headlines.slice(0, 14).map((h, i) => {
+          const isTrump = h.source === 'Trump/TS';
+          const sc = SOURCE_COLOR[h.source] ?? '#94a3b8';
+          const sb = SOURCE_BG[h.source]    ?? 'rgba(148,163,184,0.1)';
+          // Truncate very long Truth Social posts to ~220 chars
+          const displayText = h.title.length > 220 ? h.title.slice(0, 220) + '…' : h.title;
+          const inner = (
+            <div className="flex items-start gap-2 rounded-lg px-2.5 py-2 transition-all"
+              style={{
+                background: isTrump ? 'rgba(232,35,42,0.07)' : 'rgba(0,200,255,0.04)',
+                border: isTrump
+                  ? '1px solid rgba(232,35,42,0.35)'
+                  : '1px solid rgba(0,200,255,0.10)',
+                boxShadow: isTrump ? '0 0 8px rgba(232,35,42,0.12)' : 'none',
+              }}>
+              <div className="flex flex-col items-center gap-0.5 shrink-0" style={{ marginTop: '1px' }}>
+                <span className="font-mono font-bold rounded px-1.5 py-0.5"
+                  style={{ background: sb, color: sc, fontSize: '8px', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+                  {isTrump ? '🇺🇸 TRUMP' : h.source}
+                </span>
+                {isTrump && (
+                  <span style={{ color: 'rgba(232,35,42,0.6)', fontSize: '7px', fontFamily: 'Share Tech Mono, monospace', letterSpacing: '0.04em' }}>
+                    TRUTH SOCIAL
+                  </span>
+                )}
+              </div>
+              <span className="font-mono" style={{
+                color: isTrump ? 'rgba(255,230,230,0.92)' : 'rgba(255,255,255,0.82)',
+                fontSize: '11px', lineHeight: '1.45',
+              }}>
+                {displayText}
+              </span>
+            </div>
+          );
+          return h.url ? (
+            <a key={i} href={h.url} target="_blank" rel="noopener noreferrer"
+              className="block hover:opacity-80 transition-opacity"
+              style={{ textDecoration: 'none' }}>
+              {inner}
+              <div style={{ textAlign: 'right', marginTop: '1px', paddingRight: '4px' }}>
+                <span style={{ color: isTrump ? 'rgba(232,35,42,0.4)' : 'rgba(0,200,255,0.3)', fontSize: '8px', fontFamily: 'Share Tech Mono, monospace' }}>
+                  {isTrump ? '↗ VIEW ON TRUTH SOCIAL' : '↗ READ FULL ARTICLE'}
+                </span>
+              </div>
+            </a>
+          ) : (
+            <div key={i}>{inner}</div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Narrative Arc Countdown ───────────────────────────────────────────────────
+const PHASE_CONFIG = {
+  prologue:     { label: 'ACT I — RISING TENSION',        color: '#ffd700', next: 'Regional Conflict in',    nextMs: 5  * 60 * 1000 },
+  act1:         { label: 'ACT I — REGIONAL CONFLICT',     color: '#ff6a00', next: 'Global Escalation in',    nextMs: 10 * 60 * 1000 },
+  act2:         { label: 'ACT II — GLOBAL ESCALATION',    color: '#ff2d55', next: 'Finale in',               nextMs: 20 * 60 * 1000 },
+  finale_peace: { label: '🕊 RESOLUTION — PEACE ACHIEVED', color: '#00ff9d', next: 'Simulation complete',     nextMs: 0  },
+  finale_war:   { label: '☢ FINALE — NUCLEAR WAR',        color: '#ff2d55', next: 'Civilization ended',      nextMs: 0  },
+};
+
+function NarrativeCountdown({ state }: { state: WorldState }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const phase = state.narrativePhase ?? 'prologue';
+  const cfg   = PHASE_CONFIG[phase] ?? PHASE_CONFIG.prologue;
+  const start = state.simStartTime ?? now;
+  const elapsed = now - start;
+
+  // Time to next act
+  const remaining = Math.max(0, cfg.nextMs - elapsed);
+  const mm = Math.floor(remaining / 60000);
+  const ss = Math.floor((remaining % 60000) / 1000);
+  const pct = cfg.nextMs > 0 ? Math.min(100, (elapsed / cfg.nextMs) * 100) : 100;
+  const isFinal = phase === 'finale_peace' || phase === 'finale_war';
+
+  if (!state.isRunning) return null;
+
+  return (
+    <div className="mx-0 mb-0 rounded-lg overflow-hidden"
+      style={{ background: `${cfg.color}10`, border: `1px solid ${cfg.color}35` }}>
+      <div className="px-3 py-2">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="font-orbitron font-bold"
+            style={{ color: cfg.color, fontSize: '10px', letterSpacing: '0.16em' }}>
+            {cfg.label}
+          </span>
+          {!isFinal && (
+            <span className="font-mono font-bold"
+              style={{ color: cfg.color, fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
+              {mm}:{ss.toString().padStart(2, '0')}
+            </span>
+          )}
+        </div>
+        {!isFinal && (
+          <>
+            <div className="h-1.5 rounded-full overflow-hidden mb-1"
+              style={{ background: 'rgba(0,0,0,0.4)' }}>
+              <div className="h-full rounded-full transition-all duration-1000"
+                style={{ width: `${pct}%`, background: `linear-gradient(90deg,${cfg.color}60,${cfg.color})`, boxShadow: `0 0 6px ${cfg.color}` }}/>
+            </div>
+            <div className="font-mono" style={{ color: `${cfg.color}80`, fontSize: '8px', letterSpacing: '0.1em' }}>
+              {cfg.next} {mm > 0 ? `${mm}m ${ss}s` : `${ss}s`}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface Props { state: WorldState; isExpanded?: boolean; onToggleExpand?: () => void; }
 
@@ -101,10 +284,36 @@ export default function IntelPanel({ state, isExpanded = false, onToggleExpand }
             </div>
           </div>
         </div>
+        <div className="mt-3">
+          <NarrativeCountdown state={state} />
+        </div>
       </div>
 
       {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0">
+
+        {/* Live World News */}
+        <LiveNewsSection />
+
+        {/* Economic Pressure */}
+        <Section title="ECONOMIC PRESSURE" color="rgba(255,215,0,0.65)" flag="💹">
+          <div className="grid grid-cols-2 gap-2.5 mb-4">
+            <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.2)' }}>
+              <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>OIL / BBL</div>
+              <div className="font-orbitron font-bold" style={{ color: '#ffd700', fontSize: '22px' }}>${ind.oilPrice}</div>
+              <div className="font-mono font-bold" style={{ color: ind.oilPrice > 100 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{oilTrend}</div>
+            </div>
+            <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,245,255,0.07)', border: '1px solid rgba(0,245,255,0.15)' }}>
+              <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>S&amp;P 500</div>
+              <div className="font-orbitron font-bold" style={{ color: '#00f5ff', fontSize: '22px' }}>{ind.sp500}</div>
+              <div className="font-mono font-bold" style={{ color: ind.sp500 < 4800 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{sp500Trend}</div>
+            </div>
+          </div>
+          <Bar value={ind.vixFear} color="#ff6a00" label="VIX FEAR INDEX" />
+          <Bar value={ind.shippingDisruption} color="#ff2d55" label="SHIPPING DISRUPTION" />
+          <Bar value={ind.recessionRisk} color="#ffd700" label="RECESSION RISK" />
+          <Bar value={ind.sanctionsPressure} color="#b44fff" label="SANCTIONS PRESSURE" />
+        </Section>
 
         {/* Conflict Zones */}
         <Section title="ACTIVE CONFLICT ZONES" color="rgba(255,45,85,0.75)">
@@ -125,26 +334,6 @@ export default function IntelPanel({ state, isExpanded = false, onToggleExpand }
               </div>
             ))}
           </div>
-        </Section>
-
-        {/* Economic Pressure */}
-        <Section title="ECONOMIC PRESSURE" color="rgba(255,215,0,0.65)" flag="💹">
-          <div className="grid grid-cols-2 gap-2.5 mb-4">
-            <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.2)' }}>
-              <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>OIL / BBL</div>
-              <div className="font-orbitron font-bold" style={{ color: '#ffd700', fontSize: '22px' }}>${ind.oilPrice}</div>
-              <div className="font-mono font-bold" style={{ color: ind.oilPrice > 100 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{oilTrend}</div>
-            </div>
-            <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,245,255,0.07)', border: '1px solid rgba(0,245,255,0.15)' }}>
-              <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>S&amp;P 500</div>
-              <div className="font-orbitron font-bold" style={{ color: '#00f5ff', fontSize: '22px' }}>{ind.sp500}</div>
-              <div className="font-mono font-bold" style={{ color: ind.sp500 < 4800 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{sp500Trend}</div>
-            </div>
-          </div>
-          <Bar value={ind.vixFear} color="#ff6a00" label="VIX FEAR INDEX" />
-          <Bar value={ind.shippingDisruption} color="#ff2d55" label="SHIPPING DISRUPTION" />
-          <Bar value={ind.recessionRisk} color="#ffd700" label="RECESSION RISK" />
-          <Bar value={ind.sanctionsPressure} color="#b44fff" label="SANCTIONS PRESSURE" />
         </Section>
 
         {/* Alliance Matrix */}

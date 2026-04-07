@@ -137,6 +137,8 @@ export default function Home() {
         cycleNumber={state.currentCycleNumber}
         globalTension={state.globalTension}
         isRunning={state.isRunning && !state.isPaused}
+        narrativePhase={state.narrativePhase}
+        predictionQuestions={state.predictionQuestions}
       />
 
       {/* ── Leaderboard modal ── */}

@@ -1,15 +1,26 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGame } from '@/lib/predict/GameContext';
+import { NarrativePhase } from '@/lib/engine/types';
 
-const SCENARIO_QUESTIONS: Record<string, string> = {
-  global_tension:    'Will global tensions escalate to direct military conflict this cycle?',
-  taiwan_crisis:     'Will the Taiwan Strait crisis trigger PLA military action this cycle?',
-  hormuz_blockade:   'Will the Hormuz Blockade escalate to open naval warfare this cycle?',
-  nato_conflict:     'Will NATO forces engage in direct combat operations this cycle?',
-  nuclear_standoff:  'Will a nuclear-armed state launch or authorise a nuclear strike this cycle?',
-  economic_collapse: 'Will the economic crisis trigger a major government collapse this cycle?',
-  middle_east_war:   'Will the Middle East conflict spread to a new country this cycle?',
+// Outcome per narrative milestone:
+//   act1    → YES  (regional conflict erupts — Q1 was "will it escalate?" and it did)
+//   act2    → YES if tension ≥ 72, NO otherwise
+//   finale  → YES if war, NO if peace
+function phaseOutcome(phase: NarrativePhase, globalTension: number): 'yes' | 'no' | null {
+  if (phase === 'act1') return 'yes';
+  if (phase === 'act2') return globalTension >= 72 ? 'yes' : 'no';
+  if (phase === 'finale_war') return 'yes';
+  if (phase === 'finale_peace') return 'no';
+  return null;
+}
+
+// Which question index resolves at which phase
+const PHASE_RESOLVES_QUESTION: Partial<Record<NarrativePhase, number>> = {
+  act1: 0,
+  act2: 1,
+  finale_war: 2,
+  finale_peace: 2,
 };
 
 interface Props {
@@ -17,28 +28,35 @@ interface Props {
   cycleNumber: number;
   globalTension: number;
   isRunning: boolean;
+  narrativePhase?: NarrativePhase;
+  predictionQuestions?: string[];
 }
 
-export default function PredictionPanel({ scenarioId, cycleNumber, globalTension, isRunning }: Props) {
+export default function PredictionPanel({ scenarioId, cycleNumber, globalTension, isRunning, narrativePhase, predictionQuestions }: Props) {
   const { wallet, balance, activePrediction, placePrediction, resolvePrediction, showPrediction, setShowPrediction, simPredictionsUsed } = useGame();
   const MAX_SIM = 3;
-  const predictionsLeft = MAX_SIM - simPredictionsUsed;
+
+  // Which question slot is currently being shown (0, 1, 2)
+  const [questionIndex, setQuestionIndex] = useState(0);
   const [choice, setChoice] = useState<'yes' | 'no' | null>(null);
   const [amount, setAmount] = useState('50');
   const [submitted, setSubmitted] = useState(false);
-  const [lastCycle, setLastCycle] = useState(cycleNumber);
+
+  // Track the last narrative phase so we detect transitions
+  const lastPhaseRef = useRef<NarrativePhase | undefined>(narrativePhase);
+  // Track whether the auto-pop timer is running to avoid double-triggering
+  const autoPopRef = useRef(false);
 
   // Drag state
   const [pos, setPos] = useState({ x: 0, y: 0 });
   useEffect(() => {
-    setPos({ x: window.innerWidth - 420, y: window.innerHeight - 520 });
+    setPos({ x: window.innerWidth - 420, y: window.innerHeight - 540 });
   }, []);
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
-    // Don't drag if clicking interactive elements
     if ((e.target as HTMLElement).closest('button, input, select')) return;
     dragging.current = true;
     dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
@@ -49,7 +67,7 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
       const pw = panelRef.current?.offsetWidth ?? 400;
-      const ph = panelRef.current?.offsetHeight ?? 500;
+      const ph = panelRef.current?.offsetHeight ?? 540;
       const nx = Math.max(0, Math.min(window.innerWidth - pw, e.clientX - dragOffset.current.x));
       const ny = Math.max(0, Math.min(window.innerHeight - ph, e.clientY - dragOffset.current.y));
       setPos({ x: nx, y: ny });
@@ -60,28 +78,65 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  const question = SCENARIO_QUESTIONS[scenarioId] ?? 'Will this scenario escalate to military conflict this cycle?';
-
-  // Resolve every cycle AND allow a new bet each cycle
+  // ── Narrative phase transition → resolve active prediction ────────────────
   useEffect(() => {
-    if (cycleNumber > lastCycle) {
-      if (activePrediction && !activePrediction.resolved) {
-        const outcome: 'yes' | 'no' = globalTension > 65 ? 'yes' : 'no';
-        resolvePrediction(outcome);
-      }
-      setLastCycle(cycleNumber);
-      // Allow a new prediction immediately after resolution
+    if (!narrativePhase || narrativePhase === lastPhaseRef.current) return;
+    const prevPhase = lastPhaseRef.current;
+    lastPhaseRef.current = narrativePhase;
+
+    const resolveFor = PHASE_RESOLVES_QUESTION[narrativePhase];
+    if (resolveFor === undefined) return;
+
+    // Only resolve if the active prediction matches this question slot
+    if (activePrediction && !activePrediction.resolved && resolveFor === questionIndex) {
+      const outcome = phaseOutcome(narrativePhase, globalTension);
+      if (outcome) resolvePrediction(outcome);
+    }
+
+    // Auto-advance to next question after 4 seconds (if more questions remain)
+    if (!autoPopRef.current && resolveFor < MAX_SIM - 1) {
+      autoPopRef.current = true;
       setTimeout(() => {
+        setQuestionIndex(resolveFor + 1);
         setSubmitted(false);
         setChoice(null);
-      }, 3000);
+        autoPopRef.current = false;
+      }, 4000);
     }
-  }, [cycleNumber, lastCycle, activePrediction, globalTension, resolvePrediction]);
+    void prevPhase; // suppress lint
+  }, [narrativePhase, activePrediction, questionIndex, globalTension, resolvePrediction]);
 
+  // Reset when scenarioId changes (new sim)
   useEffect(() => {
+    setQuestionIndex(0);
     setSubmitted(false);
     setChoice(null);
+    lastPhaseRef.current = undefined;
+    autoPopRef.current = false;
   }, [scenarioId]);
+
+  // Current question text
+  const questions = predictionQuestions && predictionQuestions.length === 3
+    ? predictionQuestions
+    : [
+        'Will this scenario escalate to direct military conflict?',
+        'Will global powers cross the threshold into full mobilization?',
+        'Will the conflict end in nuclear war or diplomatic resolution?',
+      ];
+
+  // Show loading state while questions are being generated
+  const questionsReady = !!(predictionQuestions && predictionQuestions.length === 3);
+  const question = questions[questionIndex] ?? questions[0];
+
+  const predictionsLeft = MAX_SIM - simPredictionsUsed;
+  const tc = '#b44fff';
+  const resolved = activePrediction?.resolved;
+  const isWin = activePrediction?.result === 'win';
+  const borderColor = resolved ? (isWin ? 'rgba(0,255,157,0.5)' : 'rgba(255,45,85,0.5)') : 'rgba(120,60,255,0.4)';
+
+  // Labels for each question slot
+  const SLOT_LABELS = ['ACT I', 'ACT II', 'FINALE'];
+  const slotLabel = SLOT_LABELS[questionIndex] ?? 'PREDICTION';
 
   function handleSubmit() {
     const amt = parseInt(amount, 10);
@@ -89,11 +144,6 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
     placePrediction(choice, amt, scenarioId, cycleNumber);
     setSubmitted(true);
   }
-
-  const tc = '#b44fff';
-  const resolved = activePrediction?.resolved;
-  const isWin = activePrediction?.result === 'win';
-  const borderColor = resolved ? (isWin ? 'rgba(0,255,157,0.5)' : 'rgba(255,45,85,0.5)') : 'rgba(120,60,255,0.4)';
 
   if (!showPrediction) return null;
 
@@ -125,22 +175,26 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
         <span style={{ fontSize: '20px' }}>🎯</span>
         <div>
           <div className="font-orbitron font-bold" style={{ color: tc, fontSize: '14px', letterSpacing: '0.2em', textShadow: '0 0 16px rgba(180,79,255,0.5)' }}>
-            PREDICTION
+            PREDICTION — {slotLabel}
           </div>
           <div className="font-mono" style={{ color: 'rgba(180,79,255,0.45)', fontSize: '10px', letterSpacing: '0.1em', marginTop: '1px' }}>
             CYCLE {cycleNumber} · DRAG TO MOVE
           </div>
+          {/* Progress dots — one per question */}
           <div className="flex gap-1 mt-1">
-            {[1,2,3].map(n => (
+            {[0, 1, 2].map(n => (
               <div key={n} style={{
                 width: '8px', height: '8px', borderRadius: '50%',
-                background: n <= predictionsLeft ? '#b44fff' : 'rgba(180,79,255,0.15)',
-                boxShadow: n <= predictionsLeft ? '0 0 6px rgba(180,79,255,0.7)' : 'none',
-              }}/>
+                background: n < questionIndex
+                  ? 'rgba(0,255,157,0.6)'       // completed
+                  : n === questionIndex
+                    ? '#b44fff'                   // current
+                    : 'rgba(180,79,255,0.15)',    // future
+                boxShadow: n === questionIndex ? '0 0 6px rgba(180,79,255,0.7)' : 'none',
+              }} />
             ))}
           </div>
         </div>
-        {/* Drag grip indicator */}
         <div className="ml-auto flex items-center gap-3">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', opacity: 0.3 }}>
             {[0,1,2].map(i => <div key={i} style={{ width: '18px', height: '2px', background: '#b44fff', borderRadius: '1px' }} />)}
@@ -158,7 +212,7 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
       <div className="px-5 py-5" style={{ userSelect: 'text' }}>
 
         {/* WIN / LOSS banner */}
-        {resolved && activePrediction && (
+        {resolved && activePrediction && questionIndex === (PHASE_RESOLVES_QUESTION[narrativePhase ?? 'prologue'] ?? -1) && (
           <div className="rounded-2xl px-5 py-5 mb-4 text-center"
             style={{
               background: isWin ? 'rgba(0,255,157,0.1)' : 'rgba(255,45,85,0.1)',
@@ -173,18 +227,31 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
                 ? `+${activePrediction.payout - activePrediction.amount} GWM earned`
                 : `-${activePrediction.amount} GWM lost`}
             </div>
-            <div className="font-mono mt-2" style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px' }}>
-              Next prediction available in cycle {cycleNumber + 1}
-            </div>
+            {questionIndex < MAX_SIM - 1 && (
+              <div className="font-mono mt-2 status-blink" style={{ color: 'rgba(180,79,255,0.7)', fontSize: '11px', letterSpacing: '0.12em' }}>
+                NEXT PREDICTION LOADING...
+              </div>
+            )}
           </div>
         )}
 
-        {/* Question */}
-        {(!resolved || !activePrediction) && (
+        {/* Question area */}
+        {!(resolved && activePrediction && questionIndex === (PHASE_RESOLVES_QUESTION[narrativePhase ?? 'prologue'] ?? -1)) && (
           <>
-            <p className="font-exo mb-5" style={{ color: 'rgba(238,235,255,0.9)', fontSize: '15px', lineHeight: '1.7' }}>
-              {question}
-            </p>
+            {/* Question text with loading state */}
+            <div className="mb-5">
+              {!questionsReady && isRunning ? (
+                <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(120,60,255,0.06)', border: '1px solid rgba(120,60,255,0.15)' }}>
+                  <div className="font-mono status-blink" style={{ color: 'rgba(180,79,255,0.5)', fontSize: '11px', letterSpacing: '0.12em' }}>
+                    GENERATING LIVE INTELLIGENCE BRIEFING...
+                  </div>
+                </div>
+              ) : (
+                <p className="font-exo" style={{ color: 'rgba(238,235,255,0.9)', fontSize: '15px', lineHeight: '1.7' }}>
+                  {question}
+                </p>
+              )}
+            </div>
 
             {!wallet ? (
               <div className="text-center py-6 rounded-xl" style={{ background: 'rgba(120,60,255,0.06)', border: '1px solid rgba(120,60,255,0.15)' }}>
@@ -200,7 +267,7 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
                   {activePrediction.amount} GWM
                 </div>
                 <div className="font-mono mt-3 status-blink" style={{ color: 'rgba(180,79,255,0.7)', fontSize: '11px', letterSpacing: '0.12em' }}>
-                  AWAITING CYCLE RESOLUTION...
+                  AWAITING {slotLabel} RESOLUTION...
                 </div>
                 <div className="font-mono mt-2" style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}>
                   Potential payout: <span style={{ color: '#00ff9d', fontWeight: 'bold' }}>{activePrediction.amount * 2} GWM</span>
@@ -214,6 +281,10 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
             ) : !isRunning ? (
               <div className="text-center py-6 rounded-xl" style={{ background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.15)' }}>
                 <div className="font-orbitron font-bold" style={{ color: 'rgba(255,215,0,0.6)', fontSize: '13px', letterSpacing: '0.15em' }}>START SIMULATION TO PREDICT</div>
+              </div>
+            ) : !questionsReady ? (
+              <div className="text-center py-4 rounded-xl" style={{ background: 'rgba(120,60,255,0.06)', border: '1px solid rgba(120,60,255,0.15)' }}>
+                <div className="font-mono status-blink" style={{ color: 'rgba(180,79,255,0.5)', fontSize: '11px', letterSpacing: '0.12em' }}>INTEL ANALYSIS IN PROGRESS...</div>
               </div>
             ) : (
               <>
@@ -260,7 +331,6 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
                       letterSpacing: '0.05em',
                     }}
                   />
-                  {/* Quick amounts */}
                   <div className="flex gap-2 mt-3">
                     {[25, 50, 100, 200].map(v => (
                       <button key={v} onClick={() => setAmount(String(Math.min(v, balance)))}
@@ -296,22 +366,12 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
                     border: choice ? '1px solid rgba(180,79,255,0.6)' : '1px solid rgba(255,255,255,0.08)',
                     boxShadow: choice ? '0 6px 28px rgba(180,79,255,0.45), inset 0 1px 0 rgba(255,255,255,0.1)' : 'none',
                     cursor: choice ? 'pointer' : 'not-allowed',
-                    transform: choice ? 'scale(1)' : 'scale(1)',
                   }}>
                   PLACE PREDICTION
                 </button>
               </>
             )}
           </>
-        )}
-
-        {resolved && (
-          <button
-            onClick={() => { setSubmitted(false); setChoice(null); }}
-            className="w-full font-orbitron font-bold rounded-xl mt-3 transition-all"
-            style={{ fontSize: '13px', letterSpacing: '0.12em', padding: '14px', color: tc, background: 'rgba(120,60,255,0.1)', border: '1px solid rgba(120,60,255,0.3)' }}>
-            NEW PREDICTION NEXT CYCLE
-          </button>
         )}
       </div>
     </div>

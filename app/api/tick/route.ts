@@ -3,11 +3,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { getState, applyEvent, applyResponses, addBotMessage, updateBotMemory } from '@/lib/engine/state';
+import { getState, applyEvent, applyResponses, addBotMessage, updateBotMemory, advanceNarrativePhase, elapsedMs } from '@/lib/engine/state';
 import { SYSTEM_PROMPTS, BOT_SYSTEM_PROMPTS, buildUserPrompt, buildBotPrompt } from '@/lib/agents/prompts';
 import { getScenarioEvent, getRandomEvent, getRandomEventByType } from '@/lib/engine/events';
 import { getNewsContext } from '@/lib/engine/newsContext';
 import { GeoEvent, EventType, UserBot, BotMessage } from '@/lib/engine/types';
+import { generatePredictionQuestions } from '@/lib/sim/generatePredictions';
 
 // ── COOLDOWN / ROTATION TRACKING ─────────────────────────────────────────────
 // Persisted in globalThis so it survives across requests in the same process.
@@ -199,6 +200,74 @@ async function queryLeader(leaderId: string, event: GeoEvent) {
   }
 }
 
+// ── NARRATIVE ARC — scripted trigger events ───────────────────────────────────
+// Each act fires exactly once at the real-time threshold.
+// Persisted in globalThis so they survive across requests.
+if (!_g.__gw_actFired) _g.__gw_actFired = { act1: false, act2: false, finale: false };
+const actFired = () => _g.__gw_actFired as { act1: boolean; act2: boolean; finale: boolean };
+
+const ACT1_MS    =  5 * 60 * 1000;  //  5 minutes
+const ACT2_MS    = 10 * 60 * 1000;  // 10 minutes
+const FINALE_MS  = 20 * 60 * 1000;  // 20 minutes
+
+// Scripted events injected at each act boundary
+function act1Event(cycleId: string): GeoEvent {
+  return {
+    id: `evt_act1_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true,
+    type: 'military',
+    title: '⚠ PREDICTION CONFIRMED: Regional Conflict Erupts — Iran Strikes US Navy in Hormuz',
+    description: 'Iranian Revolutionary Guard Corps fast-boats and shore-launched missiles have struck two US Navy vessels in the Strait of Hormuz. Oil tanker traffic halted. US carrier strike group USS George Washington moves to combat posture. Regional war now underway.',
+    impact: 9,
+    region: 'Persian Gulf',
+    affectedLeaders: ['iran', 'usa', 'israel', 'saudiarabia'],
+    lat: 26.35, lng: 56.5, cinematic: true,
+    cityName: 'Strait of Hormuz', countryName: 'Persian Gulf',
+    radiusKm: 280,
+  };
+}
+
+function act2Event(cycleId: string): GeoEvent {
+  return {
+    id: `evt_act2_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true,
+    type: 'nuclear',
+    title: '☢ PREDICTION CONFIRMED: Global Escalation — NATO, Russia & China Raise Nuclear Readiness',
+    description: 'Multiple nuclear powers have simultaneously raised alert levels to DEFCON 2. Russian strategic bombers are airborne over the Arctic. Chinese DF-41 mobile launchers are repositioning. NATO activates Article 5 emergency protocols. The world stands on the edge of nuclear war.',
+    impact: 10,
+    region: 'Global',
+    affectedLeaders: ['usa', 'russia', 'china', 'nato', 'uk', 'france', 'northkorea'],
+    cinematic: false,
+    radiusKm: 0,
+  };
+}
+
+function finaleWarEvent(cycleId: string): GeoEvent {
+  return {
+    id: `evt_finale_war_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true,
+    type: 'nuclear',
+    title: '☢ SIMULATION CLIMAX: NUCLEAR WAR DECLARED — CIVILIZATION-ENDING EVENT',
+    description: 'Multiple simultaneous nuclear launches detected. US NORTHCOM confirms inbound ICBMs. Moscow, Washington, Tehran, Tel Aviv and Beijing are primary targets. Estimated 2.4 billion casualties in the first 72 hours. Civilization as we know it ends. All bets are settled.',
+    impact: 10,
+    region: 'Global',
+    affectedLeaders: ['usa', 'russia', 'china', 'iran', 'israel', 'northkorea', 'uk', 'france'],
+    cinematic: true,
+    cityName: 'Global Strike', countryName: 'Multiple Nations',
+    radiusKm: 0,
+  };
+}
+
+function finalePeaceEvent(cycleId: string): GeoEvent {
+  return {
+    id: `evt_finale_peace_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true,
+    type: 'diplomatic',
+    title: '🕊 SIMULATION CLIMAX: HISTORIC CEASEFIRE — Leaders Pull World Back From the Brink',
+    description: 'In a dramatic overnight session brokered by UN Secretary-General, all warring parties have agreed to an immediate ceasefire. US, Russia, China, Iran and Israel sign the Geneva Emergency Accords. Nuclear alert levels return to DEFCON 5. Oil flows resume through the Strait of Hormuz. The crisis is over.',
+    impact: 8,
+    region: 'Global',
+    affectedLeaders: ['usa', 'russia', 'china', 'iran', 'israel', 'nato', 'un'],
+    cinematic: false,
+  };
+}
+
 // ── TICK HANDLER ──────────────────────────────────────────────────────────────
 export async function POST() {
   const state = getState();
@@ -206,68 +275,117 @@ export async function POST() {
     return NextResponse.json({ ok: false, reason: 'not running' });
   }
 
-  const cycleId = state.activeCycleId || 'tick';
+  // ── Generate prediction questions once per simulation ────────────────────
+  // Fire-and-forget: runs async, stores result in state when ready.
+  if (!state.predictionQuestions?.length && !(_g.__gw_questionsGenerating as boolean)) {
+    _g.__gw_questionsGenerating = true;
+    generatePredictionQuestions(state.activeScenario).then(questions => {
+      const s = getState();
+      s.predictionQuestions = questions;
+      _g.__gw_questionsGenerating = false;
+    }).catch(() => { _g.__gw_questionsGenerating = false; });
+  }
 
-  // On tick 1, use the real-world seed event from news analysis if available
+  const cycleId = state.activeCycleId || 'tick';
+  const elapsed = elapsedMs();
+  const phase   = state.narrativePhase ?? 'prologue';
+  const af      = actFired();
+
+  // ── Narrative act gate — check thresholds and fire scripted events once ──
+  let narrativeEvent: GeoEvent | null = null;
+
+  if (elapsed >= FINALE_MS && !af.finale) {
+    af.finale = true;
+    // Resolution if tension < 72, otherwise war
+    const isWar = state.globalTension >= 72;
+    narrativeEvent = isWar ? finaleWarEvent(cycleId) : finalePeaceEvent(cycleId);
+    advanceNarrativePhase(
+      isWar ? 'finale_war' : 'finale_peace',
+      isWar ? 100 : Math.max(0, state.globalTension - 35),
+    );
+  } else if (elapsed >= ACT2_MS && !af.act2 && phase !== 'finale_war' && phase !== 'finale_peace') {
+    af.act2 = true;
+    narrativeEvent = act2Event(cycleId);
+    advanceNarrativePhase('act2', Math.min(100, state.globalTension + 22));
+  } else if (elapsed >= ACT1_MS && !af.act1 && phase === 'prologue') {
+    af.act1 = true;
+    narrativeEvent = act1Event(cycleId);
+    advanceNarrativePhase('act1', Math.min(100, state.globalTension + 18));
+  }
+
+  // ── Pick event: narrative gate overrides everything else ─────────────────
   const newsCtx = getNewsContext();
   const useSeed = state.tick === 0 && newsCtx?.seedEvent;
 
-  // Determine bot-biased event type (pick highest-weighted bias from deployed bots)
-  const bots = state.bots ?? [];
-  let botBiasedType: EventType | null = null;
-  if (bots.length > 0 && !useSeed) {
-    const merged: Partial<Record<EventType, number>> = {};
-    for (const bot of bots) {
-      for (const [etype, weight] of Object.entries(bot.eventTypeBias ?? {})) {
-        merged[etype as EventType] = (merged[etype as EventType] ?? 0) + (weight ?? 0);
+  let event: GeoEvent;
+  if (narrativeEvent) {
+    event = narrativeEvent;
+  } else if (useSeed) {
+    event = { ...newsCtx!.seedEvent!, id: `evt_seed_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true };
+  } else {
+    // Prologue phase: escalate tension faster so act1 lands with weight
+    const bots = state.bots ?? [];
+    let botBiasedType: EventType | null = null;
+    if (bots.length > 0) {
+      const merged: Partial<Record<EventType, number>> = {};
+      for (const bot of bots) {
+        for (const [etype, weight] of Object.entries(bot.eventTypeBias ?? {})) {
+          merged[etype as EventType] = (merged[etype as EventType] ?? 0) + (weight ?? 0);
+        }
+      }
+      const entries = Object.entries(merged).filter(([, w]) => w > 0) as [EventType, number][];
+      if (entries.length > 0) {
+        const total = entries.reduce((s, [, w]) => s + w, 0);
+        let r = Math.random() * total;
+        for (const [etype, w] of entries) { r -= w; if (r <= 0) { botBiasedType = etype; break; } }
       }
     }
-    const entries = Object.entries(merged).filter(([, w]) => w > 0) as [EventType, number][];
-    if (entries.length > 0) {
-      // Weighted random pick among bot-biased types
-      const total = entries.reduce((s, [, w]) => s + w, 0);
-      let r = Math.random() * total;
-      for (const [etype, w] of entries) {
-        r -= w;
-        if (r <= 0) { botBiasedType = etype; break; }
-      }
+
+    // Phase-biased event selection
+    if (phase === 'act2') {
+      // Act 2: heavy military/nuclear pressure
+      event = Math.random() < 0.6
+        ? getRandomEventByType('military', cycleId)
+        : Math.random() < 0.5
+          ? getRandomEventByType('nuclear', cycleId)
+          : getRandomEvent(cycleId);
+    } else if (phase === 'act1') {
+      // Act 1: military and economic shock
+      event = Math.random() < 0.55
+        ? getRandomEventByType('military', cycleId)
+        : Math.random() < 0.4
+          ? getRandomEventByType('economic', cycleId)
+          : getScenarioEvent(state.activeScenario, Math.floor(state.currentCycleNumber / 2), cycleId);
+    } else {
+      // Prologue / finale: normal weighted selection
+      event = botBiasedType && Math.random() < 0.45
+        ? getRandomEventByType(botBiasedType, cycleId)
+        : Math.random() < 0.6
+          ? getScenarioEvent(state.activeScenario, Math.floor(state.currentCycleNumber / 2), cycleId)
+          : getRandomEvent(cycleId);
     }
   }
 
-  const event: GeoEvent = useSeed
-    ? { ...newsCtx!.seedEvent!, id: `evt_seed_${Date.now()}`, timestamp: Date.now(), cycleId, isNew: true }
-    : botBiasedType && Math.random() < 0.45
-      ? getRandomEventByType(botBiasedType, cycleId)
-      : Math.random() < 0.6
-        ? getScenarioEvent(state.activeScenario, Math.floor(state.currentCycleNumber / 2), cycleId)
-        : getRandomEvent(cycleId);
-
   applyEvent(event);
 
-  // All valid candidates: active leaders + anyone the event specifically affects
+  // All valid candidates
+  const bots = state.bots ?? [];
   const candidates = Array.from(new Set([...state.activeLeaderIds, ...event.affectedLeaders]));
-
-  // Bot-aligned leaders get a presence boost (add them to candidates if not already)
-  const botAlignedLeaders = (state.bots ?? [])
-    .map(b => b.alignment)
-    .filter(a => a !== 'neutral' && a !== 'independent');
+  const botAlignedLeaders = bots.map(b => b.alignment).filter(a => a !== 'neutral' && a !== 'independent');
   for (const aligned of botAlignedLeaders) {
     if (!candidates.includes(aligned)) candidates.push(aligned);
   }
 
-  // Select a balanced subset using weighted cooldown-aware rotation
-  const toQuery = selectSpeakers(candidates, event.affectedLeaders, SPEAKERS_PER_TICK);
+  // Narrative events pull in all affected leaders + expand speaker count
+  const speakerCount = narrativeEvent ? Math.min(5, SPEAKERS_PER_TICK + 2) : SPEAKERS_PER_TICK;
+  const toQuery = selectSpeakers(candidates, event.affectedLeaders, speakerCount);
 
-  // Fallback: if cooldowns blocked everyone, pick 1-2 least-recently-spoke
   if (toQuery.length === 0) {
     const spoke = lastSpoke();
-    const fallback = [...candidates]
-      .sort((a, b) => (spoke[a] ?? 0) - (spoke[b] ?? 0))
-      .slice(0, 2);
+    const fallback = [...candidates].sort((a, b) => (spoke[a] ?? 0) - (spoke[b] ?? 0)).slice(0, 2);
     toQuery.push(...fallback);
   }
 
-  // Query leaders and bots in parallel
   const respondingBots = selectRespondingBots(bots, event);
   const [leaderResults, botResults] = await Promise.all([
     Promise.all(toQuery.map(id => queryLeader(id, event))),
@@ -276,12 +394,13 @@ export async function POST() {
 
   const responses = leaderResults.filter(Boolean) as NonNullable<typeof leaderResults[0]>[];
   const botResponses = botResults.filter(Boolean);
-
   recordSpeakers(toQuery);
 
   const messages = applyResponses(responses, event);
   return NextResponse.json({
     ok: true, eventId: event.id, speakers: toQuery,
+    narrativePhase: getState().narrativePhase,
+    isNarrativeTrigger: !!narrativeEvent,
     messageCount: messages.length, botResponses: botResponses.length,
   });
 }

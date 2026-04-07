@@ -3,8 +3,8 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 
 // Simple XML text extractor (no DOM needed)
-function extractItems(xml: string): { title: string; source: string }[] {
-  const items: { title: string; source: string }[] = [];
+function extractItems(xml: string): { title: string; url: string; source: string }[] {
+  const items: { title: string; url: string; source: string }[] = [];
   const itemBlocks = xml.match(/<item[\s\S]*?<\/item>/g) || [];
   for (const block of itemBlocks) {
     const cdataMatch = block.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/);
@@ -13,8 +13,16 @@ function extractItems(xml: string): { title: string; source: string }[] {
     const title = raw
       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+
+    // Extract URL: try <link> then <guid isPermaLink="true">
+    const linkCdata = block.match(/<link><!\[CDATA\[(https?[^\]]+)\]\]>/);
+    const linkPlain = block.match(/<link>(https?[^<]+)<\/link>/);
+    const linkAlt   = block.match(/<link\s[^>]*>(https?[^<]+)<\/link>/);
+    const guidPerm  = block.match(/<guid[^>]*isPermaLink="true"[^>]*>(https?[^<]+)<\/guid>/);
+    const url = (linkCdata?.[1] ?? linkPlain?.[1] ?? linkAlt?.[1] ?? guidPerm?.[1] ?? '').trim();
+
     if (title && title.length > 15 && !title.toLowerCase().includes('rss')) {
-      items.push({ title, source: '' });
+      items.push({ title, url, source: '' });
     }
   }
   return items;
@@ -26,9 +34,10 @@ const FEEDS = [
   { url: 'https://feeds.reuters.com/reuters/worldNews',                   source: 'Reuters' },
   { url: 'https://al-monitor.com/rss',                                    source: 'Al-Monitor' },
   { url: 'https://www.aljazeera.com/xml/rss/all.xml',                     source: 'Al Jazeera' },
+  { url: 'https://truthsocial.com/@realDonaldTrump.rss',                  source: 'Trump/TS' },
 ];
 
-let _cache: { ts: number; headlines: { title: string; source: string }[] } | null = null;
+let _cache: { ts: number; headlines: { title: string; url: string; source: string }[] } | null = null;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 export async function GET() {
@@ -48,7 +57,7 @@ export async function GET() {
     })
   );
 
-  const headlines: { title: string; source: string }[] = [];
+  const headlines: { title: string; url: string; source: string }[] = [];
   for (const r of results) {
     if (r.status === 'fulfilled') headlines.push(...r.value);
   }

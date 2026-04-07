@@ -366,14 +366,42 @@ export function applyResponses(
 // ── OUTCOME PROBABILITY ENGINE ────────────────────────────────────────────────
 function updateOutcomes(current: OutcomeScenario[], tension: number, event: GeoEvent): OutcomeScenario[] {
   const base = current.reduce((acc, o) => { acc[o.id] = o.probability; return acc; }, {} as Record<string, number>);
+  const phase = _s().narrativePhase ?? 'prologue';
 
   const militaryBoost = event.type === 'military' ? event.impact * 0.8 : 0;
   const econBoost = event.type === 'economic' ? event.impact * 0.6 : 0;
 
   let diplomatic = Math.max(5, base.o1 - militaryBoost * 1.2 - econBoost * 0.4);
-  let regional   = Math.min(60, base.o2 + militaryBoost * 0.8 + econBoost * 0.3);
-  let global     = Math.min(55, base.o3 + (tension > 65 ? militaryBoost * 1.1 : 0) + (tension > 75 ? 5 : 0));
-  let econ       = Math.min(40, base.o4 + econBoost * 1.4);
+  let regional   = Math.min(85, base.o2 + militaryBoost * 0.8 + econBoost * 0.3);
+  let global     = Math.min(80, base.o3 + (tension > 65 ? militaryBoost * 1.1 : 0) + (tension > 75 ? 5 : 0));
+  let econ       = Math.min(60, base.o4 + econBoost * 1.4);
+
+  // ── Narrative arc overrides ───────────────────────────────────────────────
+  if (phase === 'act1') {
+    // Prediction 1 confirmed: Regional Conflict dominates
+    regional   = Math.max(regional,   62);
+    global     = Math.max(global,     22);
+    diplomatic = Math.min(diplomatic, 12);
+    econ       = Math.min(econ,       10);
+  } else if (phase === 'act2') {
+    // Prediction 2 confirmed: Global Escalation rising fast
+    regional   = Math.max(regional,   35);
+    global     = Math.max(global,     48);
+    diplomatic = Math.min(diplomatic,  8);
+    econ       = Math.max(econ,       15);
+  } else if (phase === 'finale_peace') {
+    // Resolution: diplomatic probability surges
+    diplomatic = Math.max(diplomatic, 68);
+    regional   = Math.min(regional,   18);
+    global     = Math.min(global,      8);
+    econ       = Math.min(econ,        8);
+  } else if (phase === 'finale_war') {
+    // Collapse: global war and economic ruin lock in
+    global     = Math.max(global,     72);
+    econ       = Math.max(econ,       20);
+    regional   = Math.min(regional,   15);
+    diplomatic = Math.min(diplomatic,  3);
+  }
 
   // Normalize to 100
   const total = diplomatic + regional + global + econ;
@@ -426,7 +454,13 @@ export function startSim(scenarioId?: string, ctx?: {
     activeLeaderIds,
     breakingIntel: intel.length ? intel : _s().breakingIntel,
     realWorldContext: ctx ? { summary: ctx.summary, dominantTheme: ctx.dominantTheme, scenarioId: ctx.scenarioId, headlines: ctx.headlines, fetchedAt: ctx.fetchedAt } : null,
+    simStartTime: Date.now(),
+    narrativePhase: 'prologue',
+    predictionQuestions: [],  // cleared so tick route generates fresh questions
   });
+  // Reset question-generation flag so new questions are generated
+  const _g = globalThis as Record<string, unknown>;
+  _g.__gw_questionsGenerating = false;
   startCycle();
 }
 
@@ -448,6 +482,28 @@ export function resetSim() {
 export function setScenario(id: string) {
   _setS({ ..._s(), activeScenario: id });
   broadcast();
+}
+
+// ── NARRATIVE ARC ─────────────────────────────────────────────────────────────
+import type { NarrativePhase } from './types';
+
+/** Called by the tick handler to advance the narrative phase and optionally
+ *  force a specific tension level. Returns the new phase. */
+export function advanceNarrativePhase(phase: NarrativePhase, forceTension?: number): void {
+  const patch: Partial<import('./types').WorldState> = { narrativePhase: phase };
+  if (forceTension !== undefined) {
+    patch.globalTension = Math.min(100, Math.max(0, forceTension));
+    patch.threatLevel   = getThreatLevel(patch.globalTension);
+  }
+  _setS({ ..._s(), ...patch });
+  broadcast();
+}
+
+/** Elapsed milliseconds since the simulation started. */
+export function elapsedMs(): number {
+  const start = _s().simStartTime;
+  if (!start) return 0;
+  return Date.now() - start;
 }
 
 // ── BOT MANAGEMENT ────────────────────────────────────────────────────────────

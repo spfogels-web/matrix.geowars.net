@@ -12,6 +12,9 @@ import EventFocusController from './layers/EventFocusController';
 import MissileArcLayer from './layers/MissileArcLayer';
 import ImpactPulseLayer from './layers/ImpactPulseLayer';
 import CinematicGoogleMap from './layers/CinematicGoogleMap';
+import HubLayer from './layers/HubLayer';
+import RangeRingLayer from './layers/RangeRingLayer';
+import { GLOBAL_MILITARY_HUBS, type MilitaryHub } from '@/lib/sim/military-hubs';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 // REGION_COORDS, LEADER_COORDS, LEADER_NAMES, LEADER_FLAGS imported from @/lib/engine/mapConstants
@@ -64,11 +67,13 @@ const SEV_COLORS: Record<string, string> = {
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type UnitKind = 'jet'|'missile'|'nuclear'|'naval'|'submarine'|'troops';
+type UnitKind = 'jet'|'missile'|'nuclear'|'naval'|'submarine'|'troops'|'bomb';
 interface MapUnit {
   id:string; kind:UnitKind; from:[number,number]; to:[number,number];
   originLabel:string; progress:number; color:string; speed:number; exploding:boolean;
+  hasBomb?:boolean;  // jet carries a bomb that separates mid-flight
 }
+function lerp(a:number,b:number,t:number){return a+(b-a)*t;}
 interface Arc { id:string; from:[number,number]; to:[number,number]; color:string; }
 interface StrikeRecord {
   id:string; title:string; origin:string; target:string;
@@ -82,7 +87,20 @@ interface ActiveBlackout {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-// lerp / easeInOut live in ImpactPulseLayer — not needed here
+// lerp / easeInOut live in ImpactPulseLayer — also defined locally above for bomb spawning
+
+/** Returns the closest carrier of `country` to `target`, or null if none. */
+function getCarrierOrigin(country:string, target:[number,number]):{pos:[number,number];name:string}|null{
+  const carriers=(NAVAL_VESSELS[country]??[]).filter(v=>v[3]==='carrier');
+  if(!carriers.length) return null;
+  let best=carriers[0], bestD=Infinity;
+  for(const c of carriers){
+    const d=(c[0]-target[0])**2+(c[1]-target[1])**2;
+    if(d<bestD){bestD=d;best=c;}
+  }
+  return {pos:[best[0],best[1]],name:best[2]};
+}
+
 function getUnitConfig(ev:GeoEvent){
   const t=(ev.title+ev.description).toLowerCase();
   if(ev.type==='nuclear') return {kind:'nuclear' as UnitKind,speed:0.004};
@@ -110,15 +128,30 @@ function playSound(soundType:string, impact:number, ctxRef:React.MutableRefObjec
         o.start(now+i*0.06);o.stop(now+i*0.06+1.0);
       });
     } else if(soundType==='jet'){
-      const osc=ctx.createOscillator(),noise=ctx.createOscillator(),g=ctx.createGain();
-      osc.type='sawtooth';noise.type='square';
-      osc.frequency.setValueAtTime(120,now);osc.frequency.exponentialRampToValueAtTime(340,now+0.3);
-      osc.frequency.exponentialRampToValueAtTime(80,now+1.0);
-      noise.frequency.setValueAtTime(1800,now);noise.frequency.exponentialRampToValueAtTime(400,now+1.0);
-      g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(vol,now+0.12);
-      g.gain.setValueAtTime(vol,now+0.5);g.gain.exponentialRampToValueAtTime(0.0001,now+1.2);
-      osc.connect(g);noise.connect(g);g.connect(ctx.destination);
-      osc.start(now);noise.start(now);osc.stop(now+1.2);noise.stop(now+1.2);
+      // Layered engine roar — 4 harmonics sustaining for 2.5s
+      ([80,160,260,420] as number[]).forEach((freq,i)=>{
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.type='sawtooth';
+        o.frequency.setValueAtTime(freq*1.3,now);
+        o.frequency.exponentialRampToValueAtTime(freq*0.65,now+2.3);
+        const amp=vol*[1.0,0.65,0.45,0.28][i];
+        g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(amp,now+0.12);
+        g.gain.setValueAtTime(amp*0.75,now+1.4);
+        g.gain.exponentialRampToValueAtTime(0.0001,now+2.5);
+        o.connect(g);g.connect(ctx.destination);o.start(now);o.stop(now+2.5);
+      });
+      // Afterburner crack on launch
+      const ab=ctx.createOscillator(),gab=ctx.createGain();
+      ab.type='square';ab.frequency.setValueAtTime(4200,now);
+      ab.frequency.exponentialRampToValueAtTime(480,now+0.18);
+      gab.gain.setValueAtTime(vol*0.55,now);gab.gain.exponentialRampToValueAtTime(0.0001,now+0.18);
+      ab.connect(gab);gab.connect(ctx.destination);ab.start(now);ab.stop(now+0.18);
+      // High-freq turbine whine
+      const tw=ctx.createOscillator(),gtw=ctx.createGain();
+      tw.type='sine';tw.frequency.setValueAtTime(2800,now);
+      tw.frequency.exponentialRampToValueAtTime(1100,now+2.0);
+      gtw.gain.setValueAtTime(vol*0.18,now+0.1);gtw.gain.exponentialRampToValueAtTime(0.0001,now+2.0);
+      tw.connect(gtw);gtw.connect(ctx.destination);tw.start(now+0.1);tw.stop(now+2.0);
     } else if(soundType==='missile'){
       const o=ctx.createOscillator(),g=ctx.createGain();
       o.type='sawtooth';o.connect(g);g.connect(ctx.destination);
@@ -141,6 +174,42 @@ function playSound(soundType:string, impact:number, ctxRef:React.MutableRefObjec
       });
     }
   } catch(_){}
+}
+
+// ── Bomb drop + explosion sound ───────────────────────────────────────────────
+// Whistle descends for ~0.65s, then a deep bass boom + crack on impact.
+function playBombDrop(ctxRef:React.MutableRefObject<AudioContext|null>){
+  try{
+    if(!ctxRef.current) ctxRef.current=new AudioContext();
+    const ctx=ctxRef.current;
+    if(ctx.state==='suspended') ctx.resume();
+    const now=ctx.currentTime;
+    // Falling whistle
+    const w=ctx.createOscillator(),gw=ctx.createGain();
+    w.type='sine';w.frequency.setValueAtTime(1400,now);
+    w.frequency.exponentialRampToValueAtTime(150,now+0.65);
+    gw.gain.setValueAtTime(0.08,now);gw.gain.exponentialRampToValueAtTime(0.0001,now+0.65);
+    w.connect(gw);gw.connect(ctx.destination);w.start(now);w.stop(now+0.65);
+    // Impact boom
+    const b=ctx.createOscillator(),gb=ctx.createGain();
+    b.type='sine';b.frequency.setValueAtTime(72,now+0.65);
+    b.frequency.exponentialRampToValueAtTime(22,now+1.4);
+    gb.gain.setValueAtTime(0,now+0.65);gb.gain.linearRampToValueAtTime(0.22,now+0.68);
+    gb.gain.exponentialRampToValueAtTime(0.0001,now+1.4);
+    b.connect(gb);gb.connect(ctx.destination);b.start(now+0.65);b.stop(now+1.4);
+    // Sharp crack
+    const c=ctx.createOscillator(),gc=ctx.createGain();
+    c.type='sawtooth';c.frequency.setValueAtTime(3200,now+0.65);
+    c.frequency.exponentialRampToValueAtTime(80,now+0.9);
+    gc.gain.setValueAtTime(0.14,now+0.65);gc.gain.exponentialRampToValueAtTime(0.0001,now+0.9);
+    c.connect(gc);gc.connect(ctx.destination);c.start(now+0.65);c.stop(now+0.9);
+    // Secondary rumble
+    const r=ctx.createOscillator(),gr=ctx.createGain();
+    r.type='sawtooth';r.frequency.setValueAtTime(40,now+0.7);
+    r.frequency.exponentialRampToValueAtTime(18,now+1.6);
+    gr.gain.setValueAtTime(0.1,now+0.7);gr.gain.exponentialRampToValueAtTime(0.0001,now+1.6);
+    r.connect(gr);gr.connect(ctx.destination);r.start(now+0.7);r.stop(now+1.6);
+  }catch(_){}
 }
 
 // ── Game overlay: all animated elements as SVG ────────────────────────────────
@@ -188,7 +257,9 @@ function GameOverlay({ map, mapVersion, leaders, conflictZones, isRunning, tensi
       </div>
     )}
     <svg
-      style={{ position:'absolute', top:0, left:0, width:W, height:H, pointerEvents:'none', zIndex:500, overflow:'visible' }}
+      style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:500, overflow:'visible' }}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
     >
       <defs>
         {/* Glow filter for all SVG elements */}
@@ -212,6 +283,53 @@ function GameOverlay({ map, mapVersion, leaders, conflictZones, isRunning, tensi
 
       {/* ── Arcs and moving units rendered by dedicated layer components ── */}
       {/* See MissileArcLayer and ImpactPulseLayer mounted in WorldMapLeaflet */}
+
+      {/* ── STRAIT OF HORMUZ — permanent strategic chokepoint marker ── */}
+      {(()=>{
+        const [hx,hy]=px(56.5,26.35);
+        return(
+          <g key="hormuz">
+            {/* Static outline circle — always visible, never scales away */}
+            <circle cx={hx} cy={hy} r={22} fill="none" stroke="#ff2d55" strokeWidth={1.5} opacity={0.55} strokeDasharray="5,4"/>
+
+            {/* Expanding pulse rings */}
+            <circle cx={hx} cy={hy} r={0} fill="none" stroke="#ff2d55" strokeWidth={2} opacity={0}>
+              <animate attributeName="r"       values="10;44"  dur="2.4s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.8;0"  dur="2.4s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx={hx} cy={hy} r={0} fill="none" stroke="#ff6a00" strokeWidth={1} opacity={0}>
+              <animate attributeName="r"       values="10;30"  dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0.6;0"  dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+            </circle>
+
+            {/* Core fill + glow */}
+            <circle cx={hx} cy={hy} r={8} fill="#ff2d55" opacity={0.2}/>
+            <circle cx={hx} cy={hy} r={5} fill="#ff2d55" opacity={0.95}
+              style={{filter:'drop-shadow(0 0 6px #ff2d55)'}}/>
+            <circle cx={hx} cy={hy} r={2.5} fill="white" opacity={0.95}/>
+
+            {/* Labels — always crisp regardless of zoom */}
+            <text x={hx+16} y={hy-10} style={{
+              fontSize:'16px', fill:'#ff2d55', fontFamily:'Share Tech Mono,monospace', fontWeight:'bold',
+              paintOrder:'stroke', stroke:'rgba(0,0,0,0.98)', strokeWidth:'5px',
+            }}>
+              STRAIT OF HORMUZ
+            </text>
+            <text x={hx+16} y={hy+6} style={{
+              fontSize:'12px', fill:'rgba(255,110,90,0.95)', fontFamily:'Share Tech Mono,monospace', fontWeight:'bold',
+              paintOrder:'stroke', stroke:'rgba(0,0,0,0.98)', strokeWidth:'4px',
+            }}>
+              ⛽ OIL CHOKEPOINT · ☢ NUCLEAR FLASHPOINT
+            </text>
+            <text x={hx+16} y={hy+20} style={{
+              fontSize:'10px', fill:'rgba(255,110,90,0.75)', fontFamily:'Share Tech Mono,monospace',
+              paintOrder:'stroke', stroke:'rgba(0,0,0,0.95)', strokeWidth:'3.5px',
+            }}>
+              20% GLOBAL OIL TRANSIT · IRAN CONTESTED WATERS
+            </text>
+          </g>
+        );
+      })()}
 
       {/* ── Conflict zone pulses ── */}
       {conflictZones.map(zone=>{
@@ -291,40 +409,90 @@ function GameOverlay({ map, mapVersion, leaders, conflictZones, isRunning, tensi
         );
       })}
 
-      {/* ── Naval vessels (carriers, destroyers, frigates) ── */}
+      {/* ── Naval vessels (carriers, destroyers, frigates) — top-down SVG silhouettes ── */}
       {isRunning && leaders.map(leader=>{
         const vessels=NAVAL_VESSELS[leader.id];
         if(!vessels) return null;
         const lc=leader.color||tc;
         return vessels.map(([lng,lat,shipName,shipType],i)=>{
           const [bx,by]=px(lng,lat);
-          const sym=shipType==='carrier'?'⬟':shipType==='destroyer'?'▶':'◆';
-          const r=shipType==='carrier'?7:shipType==='destroyer'?5.5:4.5;
           const label=`${LEADER_NAMES[leader.id]||leader.id.toUpperCase()} · ${shipName} · ${shipType.toUpperCase()}`;
           return(
             <g key={`nav_${leader.id}_${i}`}
               style={{cursor:'pointer',pointerEvents:'all'}}
               onMouseEnter={()=>setHoveredVessel({label,x:bx,y:by})}
-              onMouseLeave={()=>setHoveredVessel(null)}>
-              {/* Sonar ping */}
-              <circle cx={bx} cy={by} r={r} fill="none" stroke={lc} strokeWidth={1} opacity={0}>
-                <animate attributeName="r" values={`${r};${r*3.5}`} dur="3s" repeatCount="indefinite"/>
-                <animate attributeName="opacity" values="0.7;0" dur="3s" repeatCount="indefinite"/>
+              onMouseLeave={()=>setHoveredVessel(null)}
+              filter="url(#glow-sm)">
+
+              {/* Wake/sonar ping */}
+              <circle cx={bx} cy={by} r={8} fill="none" stroke={lc} strokeWidth={1} opacity={0}>
+                <animate attributeName="r" values="8;28" dur="3s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.6;0" dur="3s" repeatCount="indefinite"/>
               </circle>
-              {/* Hull */}
-              <circle cx={bx} cy={by} r={r} fill={lc} opacity={0.85} filter="url(#glow-sm)"/>
-              <circle cx={bx} cy={by} r={r*0.45} fill="white" opacity={0.9}/>
-              {/* Symbol */}
-              <text x={bx} y={by-r-3} textAnchor="middle" style={{
-                fontSize:'8px',fill:lc,fontFamily:'Share Tech Mono,monospace',fontWeight:'bold',
-                paintOrder:'stroke',stroke:'rgba(0,0,0,0.95)',strokeWidth:'3px',
-              }}>{sym}</text>
+
+              {shipType==='carrier' ? (
+                /* ── Aircraft Carrier — top-down view ── */
+                <g transform={`translate(${bx},${by})`}>
+                  {/* Hull */}
+                  <path d="M-16,-3 Q-17,0 -16,3 L16,3 Q18,0 16,-3 Z"
+                    fill={lc} opacity={0.65}/>
+                  {/* Flight deck — wider, angled to port */}
+                  <path d="M-14,-3 L15,-3 L15,-12 L-10,-12 L-14,-3 Z"
+                    fill={lc} opacity={0.88}/>
+                  {/* Angled landing strip line */}
+                  <line x1={-10} y1={-12} x2={-2} y2={-3}
+                    stroke="rgba(255,255,255,0.45)" strokeWidth={0.8}/>
+                  {/* Centerline runway marking */}
+                  <line x1={-12} y1={-7.5} x2={9} y2={-7.5}
+                    stroke="rgba(255,255,255,0.3)" strokeWidth={0.7} strokeDasharray="3,2"/>
+                  {/* Island superstructure — starboard side */}
+                  <rect x={9} y={-12} width={4.5} height={4} rx={0.5}
+                    fill={lc} opacity={1}/>
+                  {/* Island mast */}
+                  <line x1={11} y1={-12} x2={11} y2={-15}
+                    stroke={lc} strokeWidth={0.8} opacity={0.8}/>
+                  {/* Bow wake dots */}
+                  <circle cx={17} cy={0} r={1} fill="white" opacity={0.35}/>
+                  <circle cx={19} cy={-1.5} r={0.7} fill="white" opacity={0.2}/>
+                  <circle cx={19} cy={1.5} r={0.7} fill="white" opacity={0.2}/>
+                </g>
+              ) : shipType==='destroyer' ? (
+                /* ── Destroyer — sleek narrow hull ── */
+                <g transform={`translate(${bx},${by})`}>
+                  {/* Main hull — narrow, pointed bow */}
+                  <path d="M0,-11 L2,-7 L2.5,5 L1.5,8 L0,9 L-1.5,8 L-2.5,5 L-2,-7 Z"
+                    fill={lc} opacity={0.9}/>
+                  {/* Superstructure */}
+                  <path d="M-1.2,-4 L1.2,-4 L1.5,3 L-1.5,3 Z"
+                    fill={lc} opacity={1}/>
+                  <rect x={-0.8} y={-7} width={1.6} height={3} rx={0.3}
+                    fill={lc} opacity={1}/>
+                  {/* Mast */}
+                  <line x1={0} y1={-7} x2={0} y2={-12}
+                    stroke={lc} strokeWidth={0.7} opacity={0.8}/>
+                  {/* Wake */}
+                  <path d="M-2.5,5 Q-5,7 -6,9" fill="none"
+                    stroke="rgba(255,255,255,0.25)" strokeWidth={1}/>
+                  <path d="M2.5,5 Q5,7 6,9" fill="none"
+                    stroke="rgba(255,255,255,0.25)" strokeWidth={1}/>
+                </g>
+              ) : (
+                /* ── Frigate — slightly wider than destroyer ── */
+                <g transform={`translate(${bx},${by})`}>
+                  <path d="M0,-9 L2.5,-5 L3,4 L2,7 L0,8 L-2,7 L-3,4 L-2.5,-5 Z"
+                    fill={lc} opacity={0.88}/>
+                  <rect x={-1.5} y={-5} width={3} height={8} rx={0.5}
+                    fill={lc} opacity={1}/>
+                  <line x1={0} y1={-9} x2={0} y2={-11}
+                    stroke={lc} strokeWidth={0.7} opacity={0.75}/>
+                </g>
+              )}
             </g>
           );
         });
       })}
 
-      {/* ── Submarines ── */}
+      {/* ── Submarines — realistic top-down silhouette ── */}
       {isRunning && leaders.map(leader=>{
         const subs=NAMED_SUBS[leader.id];
         if(!subs) return null;
@@ -337,16 +505,37 @@ function GameOverlay({ map, mapVersion, leaders, conflictZones, isRunning, tensi
               style={{cursor:'pointer',pointerEvents:'all'}}
               onMouseEnter={()=>setHoveredVessel({label,x:sx,y:sy})}
               onMouseLeave={()=>setHoveredVessel(null)}>
-              {/* Sonar ping */}
-              <circle cx={sx} cy={sy} r={0} fill="none" stroke={lc} strokeWidth={1} opacity={0.5}>
-                <animate attributeName="r" values="0;18" dur="4s" repeatCount="indefinite"/>
-                <animate attributeName="opacity" values="0.6;0" dur="4s" repeatCount="indefinite"/>
+              {/* Sonar ping rings */}
+              <circle cx={sx} cy={sy} r={0} fill="none" stroke={lc} strokeWidth={1} opacity={0}>
+                <animate attributeName="r" values="0;22" dur="4s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.55;0" dur="4s" repeatCount="indefinite"/>
               </circle>
-              {/* Sub hull — elongated */}
-              <ellipse cx={sx} cy={sy} rx={9} ry={3.5} fill={lc} opacity={0.8} filter="url(#glow-sm)"/>
-              <ellipse cx={sx} cy={sy} rx={4} ry={1.5} fill="white" opacity={0.7}/>
-              {/* Conning tower */}
-              <rect x={sx-1.5} y={sy-7} width={3} height={4} rx={1} fill={lc} opacity={0.9}/>
+              <circle cx={sx} cy={sy} r={0} fill="none" stroke={lc} strokeWidth={0.6} opacity={0}>
+                <animate attributeName="r" values="0;14" dur="4s" begin="1s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.4;0" dur="4s" begin="1s" repeatCount="indefinite"/>
+              </circle>
+
+              <g transform={`translate(${sx},${sy})`} filter="url(#glow-sm)">
+                {/* Main pressure hull — teardrop cigar shape */}
+                <path d="M-13,0 Q-10,-4.5 -2,-5 L2,-5 Q10,-4.5 14,0 Q10,4.5 2,5 L-2,5 Q-10,4.5 -13,0 Z"
+                  fill={lc} opacity={0.85}/>
+                {/* Stern cross-planes (X-plane rudders) */}
+                <path d="M11,-1 L15,-5 L16,-4 L12,0" fill={lc} opacity={0.7}/>
+                <path d="M11,1 L15,5 L16,4 L12,0" fill={lc} opacity={0.7}/>
+                {/* Sail (conning tower) — offset forward of center */}
+                <path d="M-2,-5 L-2,-10 Q0,-11.5 2,-10 L2,-5 Z"
+                  fill={lc} opacity={0.95}/>
+                {/* Sail top rounding */}
+                <ellipse cx={0} cy={-10} rx={2} ry={1.2} fill={lc} opacity={0.95}/>
+                {/* Periscope/mast */}
+                <line x1={0.5} y1={-11} x2={0.5} y2={-14}
+                  stroke={lc} strokeWidth={0.9} opacity={0.85}/>
+                <line x1={0.5} y1={-14} x2={2.5} y2={-14}
+                  stroke={lc} strokeWidth={0.9} opacity={0.75}/>
+                {/* Hull highlight — light reflection line */}
+                <path d="M-10,0 Q-4,-2.5 8,-0.5"
+                  fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth={0.8}/>
+              </g>
             </g>
           );
         });
@@ -357,36 +546,58 @@ function GameOverlay({ map, mapVersion, leaders, conflictZones, isRunning, tensi
 }
 
 // ── Death Toll Counter ────────────────────────────────────────────────────────
+// deaths = the "released" count — only increments after an explosion animation fires
 function DeathTollCounter({ deaths, isRunning }: { deaths: number; isRunning: boolean }) {
   const [displayed, setDisplayed] = useState(0);
-  const [flash, setFlash] = useState(false);
-  const prevRef = useRef(0);
+  const [counting, setCounting] = useState(false);
+  const [flash, setFlash]       = useState(false);
+  const targetRef   = useRef(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (deaths === prevRef.current) return;
-    const delta = deaths - prevRef.current;
-    prevRef.current = deaths;
+    if (deaths === targetRef.current) return;
+    const delta = deaths - targetRef.current;
+    targetRef.current = deaths;
+
+    // Flash border on impact
     setFlash(true);
-    setTimeout(() => setFlash(false), 700);
-    // Animate count up over ~600ms
-    const steps = 24;
-    const stepSize = delta / steps;
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setDisplayed(prev => Math.round(prev + stepSize));
-      if (i >= steps) clearInterval(interval);
-    }, 25);
-    return () => clearInterval(interval);
-  }, [deaths]);
+    setTimeout(() => setFlash(false), 900);
+
+    // Clear any in-progress tally
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setCounting(true);
+
+    // Tally duration scales with size: small → 2.5s, large → 5s, nuclear → 7s
+    const durationMs = delta >= 100_000 ? 7000 : delta >= 10_000 ? 5000 : delta >= 1000 ? 3500 : 2500;
+    const fps        = 30;
+    const totalSteps = Math.round((durationMs / 1000) * fps);
+    let step = 0;
+    const startVal = displayed; // capture current displayed at animation start
+
+    intervalRef.current = setInterval(() => {
+      step++;
+      // Ease-in-out cubic: slow start, fast middle, slow end — feels like a real odometer
+      const t   = step / totalSteps;
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      setDisplayed(Math.round(startVal + delta * ease));
+      if (step >= totalSteps) {
+        clearInterval(intervalRef.current!);
+        intervalRef.current = null;
+        setDisplayed(targetRef.current); // snap to exact final value
+        setCounting(false);
+      }
+    }, 1000 / fps);
+
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [deaths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function fmt(n: number) {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
-    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
     return n.toLocaleString();
   }
 
-  const deathColor = deaths >= 500000 ? '#ff2d55' : deaths >= 50000 ? '#ff6a00' : deaths >= 1000 ? '#ffd700' : '#ff6a00';
+  const deathColor = deaths >= 500_000 ? '#ff2d55' : deaths >= 50_000 ? '#ff6a00' : deaths >= 1_000 ? '#ffd700' : '#ff6a00';
 
   return (
     <div className="absolute pointer-events-none" style={{
@@ -400,21 +611,42 @@ function DeathTollCounter({ deaths, isRunning }: { deaths: number; isRunning: bo
       transition: 'border-color 0.3s, box-shadow 0.3s',
       minWidth: '140px',
     }}>
-      <div className="font-mono" style={{ color: 'rgba(255,255,255,0.38)', fontSize: '8px', letterSpacing: '0.22em', marginBottom: '3px' }}>
-        ☠ SIMULATION CASUALTIES
+      {/* Label row */}
+      <div className="flex items-center gap-1.5" style={{ marginBottom: '4px' }}>
+        <span className="font-mono" style={{ color: 'rgba(255,255,255,0.38)', fontSize: '8px', letterSpacing: '0.22em' }}>
+          ☠ SIMULATION CASUALTIES
+        </span>
+        {counting && (
+          <span className="status-blink font-mono"
+            style={{ color: deathColor, fontSize: '7px', letterSpacing: '0.12em' }}>
+            COUNTING
+          </span>
+        )}
       </div>
+
+      {/* Main tally number */}
       <div className="font-orbitron font-black" style={{
-        color: deathColor, fontSize: '22px', lineHeight: 1, letterSpacing: '0.04em',
-        textShadow: flash ? `0 0 20px ${deathColor}` : 'none',
-        transition: 'text-shadow 0.3s',
+        color: deathColor,
+        fontSize: counting ? '20px' : '22px',
+        lineHeight: 1,
+        letterSpacing: '0.04em',
+        fontVariantNumeric: 'tabular-nums',
+        textShadow: flash ? `0 0 24px ${deathColor}, 0 0 8px ${deathColor}` : counting ? `0 0 8px ${deathColor}60` : 'none',
+        transition: 'font-size 0.2s, text-shadow 0.3s',
       }}>
         {fmt(displayed)}
       </div>
-      {!isRunning && displayed === 0 && (
-        <div className="font-mono" style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px', marginTop: '2px' }}>
-          AWAITING SIM
-        </div>
-      )}
+
+      {/* Status line */}
+      <div className="font-mono" style={{ color: `${deathColor}60`, fontSize: '8px', marginTop: '3px', letterSpacing: '0.1em' }}>
+        {!isRunning && displayed === 0
+          ? 'AWAITING SIM'
+          : counting
+            ? '▶ IMPACT CONFIRMED — TALLYING'
+            : displayed > 0
+              ? 'TOTAL CONFIRMED'
+              : ''}
+      </div>
     </div>
   );
 }
@@ -578,6 +810,15 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const [isShaking, setIsShaking] = useState(false);
   const [activeBlackouts, setActiveBlackouts] = useState<ActiveBlackout[]>([]);
   const [gmapEvent, setGmapEvent] = useState<GeoEvent | null>(null);
+  const [selectedHub, setSelectedHub] = useState<MilitaryHub | null>(null);
+  const [showHubs, setShowHubs] = useState(true);
+
+  // ── Explosion-gated death counter ──────────────────────────────────────────
+  // Deaths accumulate on the server immediately; we hold them in pendingDeaths
+  // and only release them to the display when a unit visually explodes on screen.
+  const [releasedDeaths, setReleasedDeaths] = useState(0);
+  const pendingDeathsRef  = useRef(0);
+  const prevExplodingRef  = useRef(new Set<string>());
 
   type CinPhase = 'alert'|'zoom'|'missile'|'impact'|'shockwave'|'report'|'done';
   const [cinematic, setCinematic] = useState<{
@@ -600,6 +841,8 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
   const unitsRef           = useRef<MapUnit[]>([]);
   const lastEvIdRef        = useRef<string|null>(null);
   const cinematicActiveRef = useRef(false);
+  // Tracks jets that have already dropped their bomb so we don't double-spawn
+  const bombDroppedRef     = useRef(new Set<string>());
 
   // ── Initialize Leaflet map imperatively (no react-leaflet) ─────────────────
   useEffect(() => {
@@ -644,18 +887,71 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     unitAnimRef.current=setInterval(()=>{
       if(unitsRef.current.length===0) return;
       let changed=false;
+      let newExplosionThisTick=false;
+      const newBombs:MapUnit[]=[];
+
       unitsRef.current=unitsRef.current.map(u=>{
         if(u.exploding){changed=true;return{...u,progress:u.progress+0.05};}
         if(u.progress>=1) return u;
         changed=true;
         const np=u.progress+u.speed;
-        if(np>=1) return{...u,progress:1,exploding:true};
+
+        // Bomb drop: jet crosses 82% — spawn a falling bomb unit
+        if(u.kind==='jet' && u.hasBomb && !bombDroppedRef.current.has(u.id) && np>=0.82){
+          bombDroppedRef.current.add(u.id);
+          newBombs.push({
+            id:`bomb_${u.id}_${Date.now()}`,
+            kind:'bomb',
+            from:[lerp(u.from[0],u.to[0],0.82),lerp(u.from[1],u.to[1],0.82)],
+            to:u.to,
+            originLabel:'',
+            progress:0,
+            color:'#ff6a00',
+            speed:0.016,
+            exploding:false,
+            hasBomb:false,
+          });
+          playBombDrop(audioCtxRef);
+        }
+
+        if(np>=1){
+          // Unit just hit its target — check if this is a first-time explosion
+          if(!prevExplodingRef.current.has(u.id)){
+            prevExplodingRef.current.add(u.id);
+            newExplosionThisTick=true;
+          }
+          return{...u,progress:1,exploding:true};
+        }
         return{...u,progress:np};
       }).filter(u=>!(u.exploding&&u.progress>1.8));
+
+      // Append freshly-spawned bomb units
+      if(newBombs.length>0){
+        unitsRef.current=[...unitsRef.current,...newBombs];
+        changed=true;
+      }
+
+      // Release pending deaths when any unit first explodes this tick
+      if(newExplosionThisTick && pendingDeathsRef.current > 0){
+        const toRelease = pendingDeathsRef.current;
+        pendingDeathsRef.current = 0;
+        setReleasedDeaths(prev => prev + toRelease);
+      }
+
       if(changed){unitsRef.current=[...unitsRef.current];setUnits([...unitsRef.current]);}
     },50);
     return()=>{if(unitAnimRef.current) clearInterval(unitAnimRef.current);};
   },[]);
+
+  // ── Buffer incoming deaths — only release them on explosion ──────────────
+  useEffect(()=>{
+    const incoming = worldState?.cumulativeDeaths ?? 0;
+    const alreadyKnown = releasedDeaths + pendingDeathsRef.current;
+    if(incoming > alreadyKnown){
+      pendingDeathsRef.current += incoming - alreadyKnown;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[worldState?.cumulativeDeaths]);
 
   // ── Expire old blackout zones every 2s ────────────────────────────────────
   useEffect(()=>{
@@ -749,12 +1045,40 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     const origin=(LEADER_COORDS[originLid]||REGION_COORDS[ev.region]||REGION_COORDS['Global']) as [number,number];
     const originName=LEADER_NAMES[originLid]||ev.region||'UNKNOWN';
 
-    const count=ev.impact>=8?3:ev.impact>=5?2:1;
-    const newUnits:MapUnit[]=ev.affectedLeaders.slice(1,1+count).map((lid,i)=>{
-      const dest=(LEADER_COORDS[lid]||LEADER_COORDS['usa']) as [number,number];
-      return {id:`u_${Date.now()}_${i}`,kind:cfg.kind,from:origin,to:dest,originLabel:originName,progress:0,color,speed:cfg.speed,exploding:false};
-    });
-    if(newUnits.length>0){unitsRef.current=[...unitsRef.current.slice(-8),...newUnits];setUnits([...unitsRef.current]);}
+    // ── Carrier jet salvo: if the attacker has carriers and this is a jet/military strike ──
+    const targetLid = ev.affectedLeaders[1] ?? ev.affectedLeaders[0];
+    const primaryTarget = (LEADER_COORDS[targetLid] || REGION_COORDS[ev.region] || REGION_COORDS['Global']) as [number,number];
+    const carrier = cfg.kind==='jet' ? getCarrierOrigin(originLid, primaryTarget) : null;
+
+    if(carrier){
+      // Launch salvo of 2-4 jets staggered 500ms apart
+      const jetCount = ev.impact>=9 ? 4 : ev.impact>=6 ? 3 : 2;
+      for(let i=0;i<jetCount;i++){
+        setTimeout(()=>{
+          // Slight scatter around target so bombs hit different spots
+          const jLng=(Math.random()-0.5)*3, jLat=(Math.random()-0.5)*3;
+          const dest:[number,number]=[primaryTarget[0]+jLng, primaryTarget[1]+jLat];
+          const unit:MapUnit={
+            id:`u_jet_${Date.now()}_${i}`,
+            kind:'jet', from:carrier.pos, to:dest,
+            originLabel:carrier.name,
+            progress:0, color, speed:0.010+Math.random()*0.005,
+            exploding:false, hasBomb:true,
+          };
+          unitsRef.current=[...unitsRef.current.slice(-14),unit];
+          setUnits([...unitsRef.current]);
+          playSound('jet', ev.impact, audioCtxRef);
+        }, i*550);
+      }
+    } else {
+      // Non-carrier strike: original unit spawning logic
+      const count=ev.impact>=8?3:ev.impact>=5?2:1;
+      const newUnits:MapUnit[]=ev.affectedLeaders.slice(1,1+count).map((lid,i)=>{
+        const dest=(LEADER_COORDS[lid]||LEADER_COORDS['usa']) as [number,number];
+        return {id:`u_${Date.now()}_${i}`,kind:cfg.kind,from:origin,to:dest,originLabel:originName,progress:0,color,speed:cfg.speed,exploding:false};
+      });
+      if(newUnits.length>0){unitsRef.current=[...unitsRef.current.slice(-8),...newUnits];setUnits([...unitsRef.current]);}
+    }
 
     const arcTargets=ev.affectedLeaders.slice(1,5).filter(l=>l!==originLid);
     const newArcs:Arc[]=arcTargets.length>0
@@ -986,10 +1310,10 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       </div>
 
       {/* ── DEATH TOLL — top right ── */}
-      <DeathTollCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} />
+      <DeathTollCounter deaths={releasedDeaths} isRunning={isRunning} />
 
       {/* ── WORLD POPULATION — bottom left ── */}
-      <WorldPopCounter deaths={worldState?.cumulativeDeaths ?? 0} isRunning={isRunning} />
+      <WorldPopCounter deaths={releasedDeaths} isRunning={isRunning} />
 
       {/* ── Animated game overlay: conflict zones, leaders, naval, subs ── */}
       {leafletMap && (
@@ -1026,6 +1350,90 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           map={leafletMap}
           focusedEvent={focusedEvent}
         />
+      )}
+
+      {/* ── Range rings for selected hub (below hub icons) ── */}
+      {leafletMap && showHubs && selectedHub && (
+        <RangeRingLayer
+          hubs={[selectedHub]}
+          map={leafletMap}
+          mapVersion={mapVersion}
+        />
+      )}
+
+      {/* ── Military hub icons ── */}
+      {leafletMap && showHubs && (
+        <HubLayer
+          hubs={GLOBAL_MILITARY_HUBS}
+          map={leafletMap}
+          mapVersion={mapVersion}
+          selectedHubId={selectedHub?.id ?? null}
+          onSelectHub={setSelectedHub}
+        />
+      )}
+
+      {/* ── Hub toggle button (bottom HUD area, bottom-right) ── */}
+      <button
+        onClick={() => setShowHubs(v => !v)}
+        style={{
+          position: 'absolute', bottom: 28, right: 12, zIndex: 612,
+          fontFamily: 'Share Tech Mono, monospace', fontSize: '9px', letterSpacing: '0.16em',
+          color: showHubs ? '#00f5ff' : 'rgba(0,200,255,0.3)',
+          background: showHubs ? 'rgba(0,200,255,0.1)' : 'rgba(0,0,0,0.6)',
+          border: `1px solid ${showHubs ? 'rgba(0,200,255,0.4)' : 'rgba(0,200,255,0.12)'}`,
+          borderRadius: '4px', padding: '3px 9px', cursor: 'pointer', transition: 'all 0.2s',
+        }}
+      >
+        ▲ HUBS {showHubs ? 'ON' : 'OFF'}
+      </button>
+
+      {/* ── Selected hub info card ── */}
+      {selectedHub && (
+        <div
+          style={{
+            position: 'absolute', bottom: 52, right: 12, zIndex: 612,
+            background: 'rgba(0,2,14,0.97)',
+            border: '1px solid rgba(0,200,255,0.35)',
+            borderRadius: '10px', padding: '10px 14px',
+            backdropFilter: 'blur(14px)',
+            boxShadow: '0 0 20px rgba(0,200,255,0.15)',
+            minWidth: '200px', maxWidth: '240px',
+            fontFamily: 'Share Tech Mono, monospace',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ color: '#00f5ff', fontSize: '10px', letterSpacing: '0.18em' }}>
+              ◈ HUB INTEL
+            </span>
+            <button
+              onClick={() => setSelectedHub(null)}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: '12px', cursor: 'pointer', padding: 0 }}
+            >
+              ✕
+            </button>
+          </div>
+          <div style={{ color: 'white', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px', lineHeight: 1.3 }}>
+            {selectedHub.name}
+          </div>
+          {[
+            ['TYPE',    selectedHub.type.replace('_', ' ').toUpperCase()],
+            ['NATION',  selectedHub.country.toUpperCase()],
+            ['STATUS',  selectedHub.status.toUpperCase()],
+            ['RANGE',   `${selectedHub.rangeKm.toLocaleString()} KM`],
+            ['THEATER', selectedHub.theater],
+            ['DOMAINS', selectedHub.domains.join(' · ').toUpperCase()],
+          ].map(([l, v]) => (
+            <div key={l} style={{ display: 'flex', gap: '8px', marginBottom: '3px' }}>
+              <span style={{ color: 'rgba(255,255,255,0.28)', fontSize: '8px', width: '56px', flexShrink: 0, letterSpacing: '0.06em' }}>{l}</span>
+              <span style={{ color: selectedHub.status === 'alert' && l === 'STATUS' ? '#ffd700' : selectedHub.status === 'destroyed' && l === 'STATUS' ? '#ff2d55' : 'rgba(255,255,255,0.8)', fontSize: '9px' }}>{v}</span>
+            </div>
+          ))}
+          {!selectedHub.canLaunch && (
+            <div style={{ marginTop: '6px', color: '#ff2d55', fontSize: '8px', letterSpacing: '0.1em' }}>
+              ⛔ LAUNCH RESTRICTED
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Flash ── */}

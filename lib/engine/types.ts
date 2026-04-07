@@ -229,6 +229,14 @@ export interface HistoryEntry {
   tensionAtTime: number;
 }
 
+// Narrative arc phase — drives the 20-minute structured storyline
+export type NarrativePhase =
+  | 'prologue'       // 0-5 min  — rising tension, first signs of conflict
+  | 'act1'           // 5 min    — Prediction 1 confirmed: Regional Conflict erupts
+  | 'act2'           // 10 min   — Prediction 2 confirmed: Global Escalation threshold crossed
+  | 'finale_war'     // 20 min   — World ending: nuclear exchange, civilization collapse
+  | 'finale_peace';  // 20 min   — Resolution: emergency ceasefire, leaders pull back
+
 export interface WorldState {
   sessionId: string;
   globalTension: number;
@@ -267,4 +275,9 @@ export interface WorldState {
     headlines: string[];
     fetchedAt: number;
   } | null;
+  // Narrative arc
+  simStartTime?: number;
+  narrativePhase?: NarrativePhase;
+  // Dynamic prediction questions — generated fresh each simulation
+  predictionQuestions?: string[];
 }
