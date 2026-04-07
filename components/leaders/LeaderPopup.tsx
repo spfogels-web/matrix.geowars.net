@@ -18,81 +18,125 @@ const FLAG_CODE: Record<string, string> = {
   northkorea:'kp', ukraine:'ua', taiwan:'tw',
 };
 
-export default function LeaderPopup({ message }: Props) {
-  const [visible, setVisible]   = useState(false);
-  const [current, setCurrent]   = useState<LeaderMessage | null>(null);
-  const [imgError, setImgError] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+// Only pop for truly significant moments
+const MIN_ESCALATION = 7;
 
+export default function LeaderPopup({ message }: Props) {
+  const [visible, setVisible]       = useState(false);
+  const [current, setCurrent]       = useState<LeaderMessage | null>(null);
+  const [displayedText, setDisplayed] = useState('');
+  const [typed, setTyped]           = useState(false);
+  const [imgError, setImgError]     = useState(false);
+  const typingRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fire when a new important message arrives
   useEffect(() => {
     if (!message) return;
-    // Only trigger on escalation ≥ 5 to avoid constant popups
-    if (message.escalation < 5) return;
+    if (message.escalation < MIN_ESCALATION) return;
 
-    // Reset image error flag on new message
+    // Clear any running animation / dismiss timers
+    if (typingRef.current)  clearInterval(typingRef.current);
+    if (dismissRef.current) clearTimeout(dismissRef.current);
+
     setImgError(false);
     setCurrent(message);
+    setDisplayed('');
+    setTyped(false);
     setVisible(true);
 
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setVisible(false), 7000);
+    // Typewriter — 22 ms per char
+    let i = 0;
+    const text = message.content;
+    typingRef.current = setInterval(() => {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i >= text.length) {
+        clearInterval(typingRef.current!);
+        typingRef.current = null;
+        setTyped(true);
+        // Auto-dismiss 4 s after typing completes
+        dismissRef.current = setTimeout(() => setVisible(false), 4000);
+      }
+    }, 22);
 
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    return () => {
+      if (typingRef.current)  clearInterval(typingRef.current);
+      if (dismissRef.current) clearTimeout(dismissRef.current);
+    };
   }, [message?.id]);
 
   if (!current) return null;
 
-  const tc   = TONE_COLORS[current.tone] || '#00f5ff';
-  const ec   = current.escalation >= 8 ? '#ff2d55' : current.escalation >= 5 ? '#ff6a00' : '#ffd700';
+  const tc       = TONE_COLORS[current.tone] || '#00f5ff';
+  const ec       = current.escalation >= 9 ? '#ff2d55' : current.escalation >= 7 ? '#ff6a00' : '#ffd700';
   const leaderId = current.leaderId;
   const flagCode = FLAG_CODE[leaderId];
 
-  return (
-    <div
-      className="fixed z-50 pointer-events-none"
-      style={{
-        bottom: '100px', left: '320px',
-        maxWidth: '420px', minWidth: '320px',
-        transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        transform: visible ? 'translateX(0) scale(1)' : 'translateX(-120%) scale(0.8)',
-        opacity: visible ? 1 : 0,
-      }}>
-      {/* Card */}
-      <div className="rounded-2xl overflow-hidden relative"
-        style={{
-          background: 'rgba(4,2,14,0.97)',
-          border: `1.5px solid ${current.leaderColor}50`,
-          boxShadow: `0 0 40px ${current.leaderColor}30, 0 0 80px rgba(0,0,0,0.8), inset 0 0 30px rgba(0,0,0,0.4)`,
-          backdropFilter: 'blur(20px)',
-        }}>
+  function dismiss() {
+    if (typingRef.current)  clearInterval(typingRef.current);
+    if (dismissRef.current) clearTimeout(dismissRef.current);
+    setVisible(false);
+  }
 
-        {/* Flag background */}
+  return (
+    /* Full-screen backdrop */
+    <div
+      className="fixed inset-0 flex items-center justify-center"
+      style={{
+        zIndex: 350,
+        background: 'rgba(0,0,0,0.72)',
+        backdropFilter: 'blur(6px)',
+        pointerEvents: visible ? 'auto' : 'none',
+        transition: 'opacity 0.4s ease',
+        opacity: visible ? 1 : 0,
+      }}
+      onClick={dismiss}
+    >
+      {/* Card — stops click propagation so tapping card doesn't dismiss */}
+      <div
+        className="relative rounded-2xl overflow-hidden mx-4"
+        style={{
+          width: '100%',
+          maxWidth: '520px',
+          background: 'rgba(4,2,14,0.98)',
+          border: `1.5px solid ${current.leaderColor}55`,
+          boxShadow: `0 0 60px ${current.leaderColor}30, 0 0 120px rgba(0,0,0,0.9), inset 0 0 40px rgba(0,0,0,0.5)`,
+          transform: visible ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(30px)',
+          transition: 'transform 0.45s cubic-bezier(0.34,1.56,0.64,1)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Flag background wash */}
         {flagCode && (
           <>
             <img src={`https://flagcdn.com/w640/${flagCode}.png`} alt=""
               className="absolute inset-0 w-full h-full"
-              style={{ objectFit:'cover', objectPosition:'center top', opacity:0.18, pointerEvents:'none' }}/>
-            <div className="absolute inset-0" style={{ background:'linear-gradient(135deg,rgba(0,0,0,0.85),rgba(0,0,0,0.7),rgba(0,0,0,0.9))', pointerEvents:'none' }}/>
+              style={{ objectFit:'cover', objectPosition:'center top', opacity:0.14, pointerEvents:'none' }}/>
+            <div className="absolute inset-0 pointer-events-none"
+              style={{ background:'linear-gradient(135deg,rgba(0,0,0,0.9),rgba(0,0,0,0.75),rgba(0,0,0,0.92))' }}/>
           </>
         )}
 
-        {/* Scan line */}
+        {/* Scan-line sweep */}
         <div className="absolute top-0 left-0 right-0 h-px"
           style={{ background:`linear-gradient(90deg,transparent,${current.leaderColor},transparent)`, animation:'scanbeam 2s linear infinite', zIndex:2 }}/>
 
-        <div className="relative p-4" style={{ zIndex:3 }}>
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-3">
+        <div className="relative p-5" style={{ zIndex:3 }}>
+
+          {/* ── Header ── */}
+          <div className="flex items-center gap-4 mb-4">
             {/* Portrait */}
-            <div className="shrink-0 relative" style={{ width:64, height:64 }}>
+            <div className="shrink-0 relative" style={{ width:72, height:72 }}>
               <div className="w-full h-full rounded-full overflow-hidden"
-                style={{ border:`2px solid ${current.leaderColor}70`, boxShadow:`0 0 16px ${current.leaderColor}50` }}>
+                style={{ border:`2px solid ${current.leaderColor}80`, boxShadow:`0 0 20px ${current.leaderColor}60` }}>
                 {!imgError ? (
                   <img src={`/leaders/${leaderId}.jpg`} alt={current.leaderName}
-                    onError={()=>setImgError(true)}
+                    onError={() => setImgError(true)}
                     className="w-full h-full object-cover object-top"/>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center" style={{ background:`${current.leaderColor}20`, fontSize:'28px' }}>
+                  <div className="w-full h-full flex items-center justify-center"
+                    style={{ background:`${current.leaderColor}20`, fontSize:'32px' }}>
                     {current.leaderFlag}
                   </div>
                 )}
@@ -102,50 +146,80 @@ export default function LeaderPopup({ message }: Props) {
                 style={{ border:`1px solid ${current.leaderColor}`, animation:'pulse-ring 1.5s ease-out infinite', opacity:0.6 }}/>
             </div>
 
-            {/* Name + escalation */}
+            {/* Name block */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span style={{ fontSize:'20px' }}>{current.leaderFlag}</span>
-                <span className="font-orbitron font-bold" style={{ color:current.leaderColor, fontSize:'15px', textShadow:`0 0 16px ${current.leaderColor}60` }}>
+              <div className="flex items-center gap-2 mb-1">
+                <span style={{ fontSize:'22px' }}>{current.leaderFlag}</span>
+                <span className="font-orbitron font-bold truncate"
+                  style={{ color:current.leaderColor, fontSize:'17px', textShadow:`0 0 18px ${current.leaderColor}70`, letterSpacing:'0.04em' }}>
                   {current.leaderName}
                 </span>
               </div>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono px-2 py-0.5 rounded"
-                  style={{ color:tc, background:`${tc}18`, border:`1px solid ${tc}40`, fontSize:'10px', letterSpacing:'0.08em' }}>
+                  style={{ color:tc, background:`${tc}18`, border:`1px solid ${tc}40`, fontSize:'10px', letterSpacing:'0.1em' }}>
                   {current.tone.toUpperCase()}
                 </span>
-                <span className="font-orbitron font-bold" style={{ color:ec, fontSize:'18px', textShadow:`0 0 14px ${ec}` }}>
+                <span className="font-orbitron font-bold"
+                  style={{ color:ec, fontSize:'20px', textShadow:`0 0 16px ${ec}` }}>
                   {current.escalation}/10
                 </span>
-                <span className="font-mono ml-auto" style={{ color:'rgba(255,255,255,0.3)', fontSize:'10px' }}>
+                <span className="font-mono"
+                  style={{ color:'rgba(255,255,255,0.28)', fontSize:'10px', letterSpacing:'0.08em' }}>
                   ESCALATION
                 </span>
               </div>
             </div>
+
+            {/* Dismiss button */}
+            <button onClick={dismiss}
+              className="shrink-0 font-mono flex items-center justify-center rounded-full transition-all"
+              style={{ width:28, height:28, border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.4)', fontSize:'12px', background:'rgba(255,255,255,0.05)', cursor:'pointer' }}>
+              ✕
+            </button>
           </div>
 
-          {/* Quote */}
-          <div className="rounded-xl p-3.5 mb-3"
-            style={{ background:'rgba(0,0,0,0.55)', borderLeft:`3px solid ${current.leaderColor}60` }}>
-            <p className="font-exo italic" style={{ color:'rgba(245,240,255,0.95)', fontSize:'13px', lineHeight:'1.6' }}>
-              &ldquo;{current.content}&rdquo;
+          {/* ── Quote with typewriter cursor ── */}
+          <div className="rounded-xl p-4 mb-4"
+            style={{ background:'rgba(0,0,0,0.6)', borderLeft:`3px solid ${current.leaderColor}70` }}>
+            <p className="font-exo italic"
+              style={{ color:'rgba(245,240,255,0.96)', fontSize:'14.5px', lineHeight:'1.65', minHeight:'3.3em' }}>
+              &ldquo;{displayedText}
+              {!typed && (
+                <span className="status-blink"
+                  style={{ display:'inline-block', width:'2px', height:'1em', background:current.leaderColor, marginLeft:'2px', verticalAlign:'middle' }}/>
+              )}
+              &rdquo;
             </p>
           </div>
 
-          {/* Action */}
-          <div className="flex items-start gap-2 rounded-lg px-3 py-2"
-            style={{ background:`${ec}10`, borderLeft:`2px solid ${ec}50` }}>
-            <span style={{ color:ec, fontSize:'12px', marginTop:'2px', flexShrink:0 }}>▶</span>
-            <span className="font-mono" style={{ color:'rgba(228,232,255,0.85)', fontSize:'11px' }}>{current.action}</span>
-          </div>
+          {/* ── Action ── */}
+          {typed && (
+            <div className="flex items-start gap-2 rounded-lg px-3 py-2.5 fade-in"
+              style={{ background:`${ec}0e`, border:`1px solid ${ec}30` }}>
+              <span style={{ color:ec, fontSize:'12px', marginTop:'2px', flexShrink:0 }}>▶</span>
+              <span className="font-mono" style={{ color:'rgba(228,232,255,0.85)', fontSize:'12px', lineHeight:'1.5' }}>
+                {current.action}
+              </span>
+            </div>
+          )}
+
+          {/* Hint to tap to dismiss */}
+          {typed && (
+            <div className="mt-3 text-center">
+              <span className="font-mono" style={{ color:'rgba(255,255,255,0.2)', fontSize:'10px', letterSpacing:'0.1em' }}>
+                TAP ANYWHERE TO DISMISS
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Progress bar — auto-dismiss timer */}
+        {/* Progress bar — counts down to auto-dismiss once typing is done */}
         <div style={{ height:'3px', background:'rgba(255,255,255,0.08)' }}>
           <div style={{
-            height:'100%', background:ec, transformOrigin:'left',
-            animation:`${visible ? 'shrink-bar 7s linear forwards' : 'none'}`,
+            height:'100%', background: ec,
+            transformOrigin:'left',
+            animation: typed ? 'shrink-bar 4s linear forwards' : 'none',
           }}/>
         </div>
       </div>
