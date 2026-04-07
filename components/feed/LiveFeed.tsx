@@ -40,11 +40,12 @@ type FeedItem =
   | { kind: 'bot';    data: BotMessage;      ts: number };
 
 export default function LiveFeed({ events, messages, botMessages = [], isExpanded, onToggle }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string>('all');
 
+  // Scroll to top when new items arrive so newest entry is always visible
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [events.length, messages.length, botMessages.length]);
 
   const items: FeedItem[] = [
@@ -91,8 +92,9 @@ export default function LiveFeed({ events, messages, botMessages = [], isExpande
         ))}
       </div>
 
-      {/* Feed content */}
+      {/* Feed content — newest at top, scroll down for older entries */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <div ref={topRef} />
         {filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="font-orbitron" style={{ color: 'rgba(180,79,255,0.2)', fontSize: '16px', letterSpacing: '0.2em' }}>
@@ -231,7 +233,6 @@ export default function LiveFeed({ events, messages, botMessages = [], isExpande
 
           return null;
         })}
-        <div ref={bottomRef} />
       </div>
     </div>
   );

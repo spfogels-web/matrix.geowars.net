@@ -266,7 +266,7 @@ export default function Home() {
 
             {/* Map */}
             <div className="shrink-0 overflow-hidden panel relative"
-              style={{ height: '38vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
+              style={{ height: '55vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
               <WorldMap
                 {...mapProps}
                 isExpanded={false}
@@ -552,7 +552,7 @@ export default function Home() {
             {/* Center: World Map + Live Feed */}
             <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0 relative">
               <div className="rounded-xl overflow-hidden panel"
-                style={{ flex: feedExpanded ? '1 1 35%' : '1 1 62%', minHeight: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
+                style={{ flex: feedExpanded ? '1 1 30%' : '1 1 74%', minHeight: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
                 <WorldMap
                   {...mapProps}
                   isExpanded={false}
@@ -561,7 +561,7 @@ export default function Home() {
                   onInitiate={() => control('start')}
                 />
               </div>
-              <div className="overflow-hidden" style={{ flex: feedExpanded ? '1 1 65%' : '1 1 38%', minHeight: 0 }}>
+              <div className="overflow-hidden" style={{ flex: feedExpanded ? '1 1 70%' : '1 1 26%', minHeight: 0 }}>
                 <LiveFeed
                   events={state.events}
                   messages={state.messages}
