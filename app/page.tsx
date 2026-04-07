@@ -34,6 +34,7 @@ export default function Home() {
   const [mapExpanded, setMapExpanded]   = useState(false);
   const [leftExpanded, setLeftExpanded]   = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [mobileMapCollapsed, setMobileMapCollapsed] = useState(false);
   const [chatOpen, setChatOpen]         = useState(false);
   const [botPanelOpen, setBotPanelOpen] = useState(false);
   const [intelExpanded, setIntelExpanded] = useState(false);
@@ -124,7 +125,7 @@ export default function Home() {
 
       {/* ── Fullscreen map overlay ── */}
       {mapExpanded && (
-        <div className="fixed inset-0 z-50" style={{ background: '#010408' }}>
+        <div className="fixed inset-0" style={{ background: '#010408', zIndex: 400 }}>
           <WorldMap {...mapProps} isExpanded={true} onExpandToggle={() => setMapExpanded(false)} />
         </div>
       )}
@@ -216,12 +217,12 @@ export default function Home() {
 
           </header>
 
-          {/* Mobile main */}
+          {/* Mobile main — single scrollable column */}
           <main className="flex-1 flex flex-col overflow-hidden min-h-0" style={{ position: 'relative' }}>
 
-            {/* World Briefing — full screen, only shown before sim starts */}
+            {/* World Briefing — covers full main area before sim starts */}
             {!state.isRunning && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 60, overflowY: 'auto' }}>
+              <div style={{ position: 'absolute', inset: 0, zIndex: 200, overflowY: 'auto' }}>
                 <WorldBriefing state={state} onInitiate={() => control('start')} />
               </div>
             )}
@@ -231,9 +232,7 @@ export default function Home() {
               height: '32px',
               background: 'rgba(0,0,0,0.95)',
               borderBottom: '1px solid rgba(0,245,255,0.18)',
-              position: 'relative', zIndex: 55,
             }}>
-              {/* Logo */}
               <div className="shrink-0 flex items-center gap-1.5 px-3 font-orbitron font-black"
                 style={{
                   height: '100%', borderRight: '1px solid rgba(0,245,255,0.18)',
@@ -244,7 +243,6 @@ export default function Home() {
                 <span className="status-blink" style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#00f5ff', boxShadow: '0 0 6px #00f5ff' }} />
                 GEOWARS MATRIX
               </div>
-              {/* Scrolling intel ticker */}
               <div style={{ flex: 1, overflow: 'hidden', height: '100%', position: 'relative' }}>
                 <div style={{
                   display: 'flex', alignItems: 'center', height: '100%',
@@ -264,34 +262,49 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Map */}
-            <div className="shrink-0 overflow-hidden panel relative"
-              style={{ height: '55vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
-              <WorldMap
-                {...mapProps}
-                isExpanded={false}
-                onExpandToggle={() => setMapExpanded(true)}
-                worldState={state}
-                onInitiate={() => control('start')}
-              />
-            </div>
+            {/* Map — collapsible */}
+            {!mobileMapCollapsed && (
+              <div className="shrink-0 overflow-hidden panel relative"
+                style={{ height: '52vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
+                <WorldMap
+                  {...mapProps}
+                  isExpanded={false}
+                  onExpandToggle={() => setMapExpanded(true)}
+                  worldState={state}
+                  onInitiate={() => control('start')}
+                />
+              </div>
+            )}
 
-            {/* Connect Wallet row — above tabs */}
+            {/* Map toggle strip */}
+            <button
+              onClick={() => setMobileMapCollapsed(v => !v)}
+              className="shrink-0 w-full font-orbitron font-bold"
+              style={{
+                height: '28px', fontSize: '9px', letterSpacing: '0.14em',
+                background: mobileMapCollapsed ? 'rgba(0,245,255,0.08)' : 'rgba(0,0,0,0.85)',
+                borderTop: mobileMapCollapsed ? '1px solid rgba(0,245,255,0.25)' : 'none',
+                borderBottom: '1px solid rgba(0,245,255,0.18)',
+                color: mobileMapCollapsed ? '#00f5ff' : 'rgba(0,245,255,0.45)',
+                cursor: 'pointer',
+              }}>
+              {mobileMapCollapsed ? '▼ SHOW MAP' : '▲ HIDE MAP'}
+            </button>
+
+            {/* Connect Wallet row */}
             <div className="shrink-0 flex items-center justify-center px-3" style={{
               height: '44px',
               background: 'rgba(4,2,12,0.98)',
               borderBottom: '1px solid rgba(0,245,255,0.1)',
-              position: 'relative', zIndex: 55,
             }}>
               <WalletButton />
             </div>
 
             {/* Unified tab bar: AGENTS · COMMS · BOARD | FEED · LEADERS · INTEL */}
             <div className="shrink-0 flex" style={{
-              height: '40px',
+              height: '44px',
               background: 'rgba(6,3,15,0.98)',
               borderBottom: '1px solid rgba(120,60,255,0.18)',
-              position: 'relative', zIndex: 55,
             }}>
               {([
                 ['agents', '🤖', 'AGENTS', '#b44fff'],
@@ -316,16 +329,16 @@ export default function Home() {
                       borderBottom: isActive ? `2px solid ${accent}` : '2px solid transparent',
                       cursor: 'pointer',
                       transition: 'all 0.18s',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
                     }}>
-                    <span style={{ fontSize: '11px', lineHeight: 1 }}>{icon}</span>
+                    <span style={{ fontSize: '14px', lineHeight: 1 }}>{icon}</span>
                     {label}
                   </button>
                 );
               })}
 
               {/* Divider */}
-              <div style={{ width: '1px', background: 'rgba(120,60,255,0.25)', margin: '6px 0' }} />
+              <div style={{ width: '1px', background: 'rgba(120,60,255,0.25)', margin: '8px 0' }} />
 
               {([
                 ['feed',    '📰', 'FEED'],
@@ -342,17 +355,17 @@ export default function Home() {
                     borderBottom: activeTab === tab ? '2px solid #00f5ff' : '2px solid transparent',
                     cursor: 'pointer',
                     transition: 'all 0.18s',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
                   }}>
-                  <span style={{ fontSize: '11px', lineHeight: 1 }}>{icon}</span>
+                  <span style={{ fontSize: '14px', lineHeight: 1 }}>{icon}</span>
                   {label}
                 </button>
               ))}
             </div>
 
-            {/* Tab content — fills remaining height, scrolls internally */}
-            <div className="flex-1 overflow-hidden min-h-0">
-              {activeTab === 'feed' && (
+            {/* Tab content — feed/leaders scroll freely; intel fills height with internal scroll */}
+            {activeTab === 'feed' && (
+              <div className="flex-1 overflow-y-auto min-h-0">
                 <LiveFeed
                   events={state.events}
                   messages={state.messages}
@@ -360,8 +373,10 @@ export default function Home() {
                   isExpanded={false}
                   onToggle={() => {}}
                 />
-              )}
-              {activeTab === 'leaders' && (
+              </div>
+            )}
+            {activeTab === 'leaders' && (
+              <div className="flex-1 flex flex-col min-h-0" style={{ padding: '6px' }}>
                 <LeaderStack
                   leaders={state.leaders.filter(l => state.activeLeaderIds.includes(l.id))}
                   activeIds={state.activeLeaderIds}
@@ -371,15 +386,17 @@ export default function Home() {
                   onToggleExpand={() => {}}
                   messages={state.messages}
                 />
-              )}
-              {activeTab === 'intel' && (
+              </div>
+            )}
+            {activeTab === 'intel' && (
+              <div className="flex-1 flex flex-col min-h-0">
                 <IntelPanel
                   state={state}
                   isExpanded={false}
                   onToggleExpand={() => {}}
                 />
-              )}
-            </div>
+              </div>
+            )}
           </main>
         </>
       ) : (

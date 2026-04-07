@@ -35,11 +35,12 @@ export default function LeaderChat({ messages, leaders, isOpen, onClose }: Props
   const uniqueNames = messages.map(m => m.leaderName).filter((n, i, a) => a.indexOf(n) === i).slice(0, 8);
 
   return (
-    <div className="fixed z-50 flex flex-col"
+    <div className="fixed flex flex-col"
       style={{
-        right: isOpen ? '0' : '-480px',
+        right: isOpen ? '0' : '-105vw',
         top: 0, bottom: 0,
-        width: '460px',
+        width: 'min(460px, 100vw)',
+        zIndex: 300,
         transition: 'right 0.4s cubic-bezier(0.4,0,0.2,1)',
         background: 'rgba(2,1,10,0.97)',
         borderLeft: '1px solid rgba(120,60,255,0.3)',

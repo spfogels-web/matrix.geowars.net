@@ -9,8 +9,8 @@ export default function Leaderboard() {
   const short = (addr: string) => addr.length > 12 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)' }}
+    <div className="fixed inset-0 flex items-center justify-center"
+      style={{ zIndex: 300, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)' }}
       onClick={() => setShowLeaderboard(false)}>
       <div className="flex flex-col rounded-2xl overflow-hidden"
         style={{

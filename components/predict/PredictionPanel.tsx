@@ -150,10 +150,11 @@ export default function PredictionPanel({ scenarioId, cycleNumber, globalTension
   return (
     <div
       ref={panelRef}
-      className="fixed z-40 flex flex-col"
+      className="fixed flex flex-col"
       style={{
+        zIndex: 250,
         left: pos.x, top: pos.y,
-        width: '400px',
+        width: 'min(400px, 95vw)',
         background: 'linear-gradient(160deg, rgba(8,3,22,0.98) 0%, rgba(4,2,14,0.98) 100%)',
         border: `1px solid ${borderColor}`,
         borderRadius: '18px',

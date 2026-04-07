@@ -109,11 +109,12 @@ export default function BotPanel({ isOpen, onClose }: Props) {
 
   return (
     <div
-      className="fixed z-50 flex flex-col"
+      className="fixed flex flex-col"
       style={{
-        left: isOpen ? '0' : '-520px',
+        left: isOpen ? '0' : '-105vw',
         top: 0, bottom: 0,
-        width: '490px',
+        width: 'min(490px, 100vw)',
+        zIndex: 300,
         transition: 'left 0.4s cubic-bezier(0.4,0,0.2,1)',
         background: 'rgba(2,1,10,0.98)',
         borderRight: '1px solid rgba(180,79,255,0.2)',
