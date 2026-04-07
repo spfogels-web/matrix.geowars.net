@@ -173,24 +173,25 @@ export default function Home() {
       {isMobile ? (
         /* ── MOBILE LAYOUT ─────────────────────────────────────────────── */
         <>
-          {/* Mobile header — single row + action row */}
-          <header className="shrink-0" style={{ background: 'rgba(8,3,20,0.98)', borderBottom: '1px solid rgba(120,60,255,0.18)', position: 'relative', zIndex: 80 }}>
+          {/* Mobile header */}
+          <header className="shrink-0" style={{ background: 'rgba(8,3,20,0.98)', borderBottom: '1px solid rgba(120,60,255,0.25)', position: 'relative', zIndex: 80 }}>
 
-            {/* Row 1: title · tension · threat · status · sim controls */}
-            <div className="flex items-center gap-2 px-3" style={{ height: '48px' }}>
+            <div className="flex items-center gap-2 px-3" style={{ height: '52px' }}>
+              {/* Brand */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <div className="w-2 h-2 rounded-full status-blink" style={{ backgroundColor: tc, boxShadow: `0 0 8px ${tc}` }} />
-                <span className="font-orbitron font-black" style={{ fontSize: '11px', letterSpacing: '0.18em', color: '#00f5ff', textShadow: '0 0 10px rgba(0,245,255,0.6)' }}>GEOWARS</span>
+                <div className="w-2.5 h-2.5 rounded-full status-blink" style={{ backgroundColor: tc, boxShadow: `0 0 10px ${tc}` }} />
+                <span className="font-orbitron font-black" style={{ fontSize: '14px', letterSpacing: '0.2em', color: '#00f5ff', textShadow: '0 0 14px rgba(0,245,255,0.8)' }}>GEOWARS</span>
               </div>
 
-              <div className="h-5 w-px shrink-0" style={{ background: 'rgba(120,60,255,0.3)' }} />
+              <div className="h-6 w-px shrink-0" style={{ background: 'rgba(120,60,255,0.35)' }} />
 
-              <span className="font-orbitron font-bold shrink-0" style={{ color: tc, fontSize: '22px', lineHeight: 1, textShadow: `0 0 14px ${tc}` }}>
+              {/* Tension */}
+              <span className="font-orbitron font-bold shrink-0" style={{ color: tc, fontSize: '26px', lineHeight: 1, textShadow: `0 0 16px ${tc}` }}>
                 {state.globalTension}
               </span>
-              <span className="font-mono shrink-0" style={{ color: 'rgba(200,210,240,0.35)', fontSize: '10px' }}>/100</span>
-              <span className="font-mono px-1.5 py-0.5 rounded border shrink-0"
-                style={{ color: tc, borderColor: `${tc}60`, background: `${tc}10`, fontSize: '8px', letterSpacing: '0.1em' }}>
+              <span className="font-mono shrink-0" style={{ color: 'rgba(200,210,240,0.35)', fontSize: '11px' }}>/100</span>
+              <span className="font-mono px-2 py-0.5 rounded border shrink-0"
+                style={{ color: tc, borderColor: `${tc}60`, background: `${tc}12`, fontSize: '9px', letterSpacing: '0.1em' }}>
                 {state.threatLevel.replace('_', ' ')}
               </span>
 
@@ -198,7 +199,7 @@ export default function Home() {
 
               <span className="font-mono font-bold shrink-0" style={{
                 color: isProcessing ? '#ffd700' : state.isRunning && !state.isPaused ? '#00ff9d' : 'rgba(200,210,240,0.3)',
-                fontSize: '9px', letterSpacing: '0.06em',
+                fontSize: '10px', letterSpacing: '0.06em',
               }}>
                 {runLabel}
               </span>
@@ -206,17 +207,17 @@ export default function Home() {
               <div className="flex items-center gap-1.5 shrink-0">
                 {!state.isRunning ? (
                   <button onClick={() => control('start')} className="hdr-btn hdr-btn-green font-orbitron font-bold"
-                    style={{ fontSize: '10px', padding: '5px 11px' }}>
+                    style={{ fontSize: '11px', padding: '6px 13px' }}>
                     ▶ START
                   </button>
                 ) : (
                   <>
                     <button onClick={() => control('pause')} className="hdr-btn hdr-btn-yellow"
-                      style={{ fontSize: '10px', padding: '5px 9px' }}>
+                      style={{ fontSize: '11px', padding: '6px 10px' }}>
                       {state.isPaused ? '▶' : '⏸'}
                     </button>
                     <button onClick={() => control('stop')} className="hdr-btn hdr-btn-orange"
-                      style={{ fontSize: '10px', padding: '5px 9px' }}>
+                      style={{ fontSize: '11px', padding: '6px 10px' }}>
                       ■
                     </button>
                   </>

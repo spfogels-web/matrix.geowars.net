@@ -656,6 +656,7 @@ function DeathTollCounter({ deaths, isRunning }: { deaths: number; isRunning: bo
 const WORLD_POP_BASE = 8_119_000_000;
 
 function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boolean }) {
+  const isMobile = useIsMobile();
   const [tick, setTick] = useState(0);
   const [flash, setFlash] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -696,7 +697,7 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
     <div
       className="absolute"
       style={{
-        bottom: 38, left: 8, zIndex: 500,
+        bottom: isMobile ? 52 : 38, left: 8, zIndex: 500,
         background: expanded ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.82)',
         border: `1px solid ${borderColor}`,
         borderRadius: '8px',
@@ -1330,7 +1331,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           title={isExpanded ? 'Collapse map (Esc)' : 'Expand map fullscreen (F)'}
           style={{
             position: 'absolute',
-            bottom: isExpanded ? 'auto' : (isMobile ? 8 : 46),
+            bottom: isExpanded ? 'auto' : (isMobile ? 36 : 46),
             top: isExpanded ? 12 : 'auto',
             right: isMobile ? 8 : 12,
             zIndex: 650,
@@ -1425,7 +1426,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         onClick={() => setShowHubs(v => !v)}
         style={{
           position: 'absolute',
-          bottom: isMobile ? 8 : 46,
+          bottom: isMobile ? 36 : 46,
           right: isMobile ? 82 : 132,
           zIndex: 651,
           fontFamily: 'Share Tech Mono, monospace',
