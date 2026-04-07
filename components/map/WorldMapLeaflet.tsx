@@ -15,6 +15,7 @@ import CinematicGoogleMap from './layers/CinematicGoogleMap';
 import HubLayer from './layers/HubLayer';
 import RangeRingLayer from './layers/RangeRingLayer';
 import { GLOBAL_MILITARY_HUBS, type MilitaryHub } from '@/lib/sim/military-hubs';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 // REGION_COORDS, LEADER_COORDS, LEADER_NAMES, LEADER_FLAGS imported from @/lib/engine/mapConstants
@@ -695,7 +696,7 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
     <div
       className="absolute"
       style={{
-        bottom: 28, left: 8, zIndex: 500,
+        bottom: 38, left: 8, zIndex: 500,
         background: expanded ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.82)',
         border: `1px solid ${borderColor}`,
         borderRadius: '8px',
@@ -703,7 +704,8 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
         backdropFilter: 'blur(12px)',
         boxShadow: glowShadow,
         transition: 'border-color 0.3s, box-shadow 0.3s, padding 0.25s',
-        minWidth: expanded ? '260px' : '160px',
+        minWidth: expanded ? '240px' : '140px',
+        maxWidth: expanded ? '260px' : '140px',
         cursor: 'pointer',
         userSelect: 'none',
       }}
@@ -797,6 +799,7 @@ interface Props {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[], worldState, focusedEvent, isExpanded=false, onExpandToggle }: Props) {
+  const isMobile = useIsMobile();
   const [arcs, setArcs]   = useState<Arc[]>([]);
   const [units, setUnits] = useState<MapUnit[]>([]);
   const [flashColor, setFlashColor] = useState<string|null>(null);
@@ -1327,31 +1330,30 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           title={isExpanded ? 'Collapse map (Esc)' : 'Expand map fullscreen (F)'}
           style={{
             position: 'absolute',
-            bottom: isExpanded ? 'auto' : 46,
+            bottom: isExpanded ? 'auto' : (isMobile ? 8 : 46),
             top: isExpanded ? 12 : 'auto',
-            right: 12,
+            right: isMobile ? 8 : 12,
             zIndex: 650,
             fontFamily: 'Share Tech Mono, monospace',
-            fontSize: '12px', letterSpacing: '0.16em',
+            fontSize: isMobile ? '10px' : '12px',
+            letterSpacing: '0.14em',
             color: isExpanded ? '#ff2d55' : '#00f5ff',
-            background: isExpanded
-              ? 'rgba(20,0,5,0.92)'
-              : 'rgba(0,8,20,0.92)',
+            background: isExpanded ? 'rgba(20,0,5,0.92)' : 'rgba(0,8,20,0.92)',
             border: `1.5px solid ${isExpanded ? 'rgba(255,45,85,0.7)' : 'rgba(0,245,255,0.6)'}`,
-            borderRadius: '8px',
-            padding: '7px 14px',
+            borderRadius: '6px',
+            padding: isMobile ? '5px 10px' : '7px 14px',
             cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '6px',
+            display: 'flex', alignItems: 'center', gap: '4px',
             backdropFilter: 'blur(12px)',
             boxShadow: isExpanded
-              ? '0 0 20px rgba(255,45,85,0.35), 0 2px 8px rgba(0,0,0,0.8)'
-              : '0 0 20px rgba(0,245,255,0.3), 0 2px 8px rgba(0,0,0,0.8)',
+              ? '0 0 16px rgba(255,45,85,0.3), 0 2px 6px rgba(0,0,0,0.8)'
+              : '0 0 16px rgba(0,245,255,0.25), 0 2px 6px rgba(0,0,0,0.8)',
             transition: 'all 0.15s ease',
           }}
         >
           {isExpanded
-            ? <><span style={{ fontSize: '16px', lineHeight: 1 }}>⊠</span> COLLAPSE</>
-            : <><span style={{ fontSize: '16px', lineHeight: 1 }}>⤢</span> FULL MAP</>}
+            ? <><span style={{ fontSize: isMobile ? '12px' : '16px', lineHeight: 1 }}>⊠</span> {isMobile ? '' : 'COLLAPSE'}</>
+            : <><span style={{ fontSize: isMobile ? '12px' : '16px', lineHeight: 1 }}>⤢</span> FULL MAP</>}
         </button>
       )}
 
@@ -1418,21 +1420,28 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         />
       )}
 
-      {/* ── Hub toggle + Expand — bottom-right, side by side ── */}
+      {/* ── Hub toggle — bottom-right, beside expand ── */}
       <button
         onClick={() => setShowHubs(v => !v)}
         style={{
-          position: 'absolute', bottom: 46, right: 132, zIndex: 651,
-          fontFamily: 'Share Tech Mono, monospace', fontSize: '12px', letterSpacing: '0.14em',
+          position: 'absolute',
+          bottom: isMobile ? 8 : 46,
+          right: isMobile ? 82 : 132,
+          zIndex: 651,
+          fontFamily: 'Share Tech Mono, monospace',
+          fontSize: isMobile ? '10px' : '12px',
+          letterSpacing: '0.12em',
           color: showHubs ? '#00f5ff' : 'rgba(0,200,255,0.35)',
           background: showHubs ? 'rgba(0,8,20,0.92)' : 'rgba(0,4,12,0.92)',
           border: `1.5px solid ${showHubs ? 'rgba(0,245,255,0.5)' : 'rgba(0,200,255,0.18)'}`,
-          borderRadius: '8px', padding: '7px 14px', cursor: 'pointer', transition: 'all 0.2s',
+          borderRadius: '6px',
+          padding: isMobile ? '5px 10px' : '7px 14px',
+          cursor: 'pointer', transition: 'all 0.2s',
           backdropFilter: 'blur(12px)',
-          boxShadow: showHubs ? '0 0 14px rgba(0,245,255,0.2), 0 2px 8px rgba(0,0,0,0.8)' : '0 2px 8px rgba(0,0,0,0.8)',
+          boxShadow: showHubs ? '0 0 12px rgba(0,245,255,0.2), 0 2px 6px rgba(0,0,0,0.8)' : '0 2px 6px rgba(0,0,0,0.8)',
         }}
       >
-        ▲ HUBS {showHubs ? 'ON' : 'OFF'}
+        {isMobile ? (showHubs ? '▲ HUBS' : '▼ HUBS') : `▲ HUBS ${showHubs ? 'ON' : 'OFF'}`}
       </button>
 
       {/* ── Selected hub info card ── */}
