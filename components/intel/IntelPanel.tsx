@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { WorldState } from '@/lib/engine/types';
 
 interface NewsHeadline { title: string; url: string; source: string; }
@@ -243,12 +243,26 @@ function Section({ title, children, color = 'rgba(0,245,255,0.5)', flag }: { tit
   );
 }
 
+const ANCHORS = [
+  { id: 'intel-news',     label: '📰 NEWS',     color: 'rgba(0,200,255,0.7)'  },
+  { id: 'intel-economic', label: '💹 ECONOMIC', color: 'rgba(255,215,0,0.7)'  },
+  { id: 'intel-alliances',label: '🌐 ALLIANCES',color: 'rgba(180,79,255,0.7)' },
+  { id: 'intel-outcomes', label: '🎯 OUTCOMES', color: 'rgba(0,245,255,0.7)'  },
+  { id: 'intel-breaking', label: '⚡ BREAKING', color: 'rgba(0,255,157,0.7)'  },
+];
+
 export default function IntelPanel({ state, isExpanded = false, onToggleExpand }: Props) {
+  const bodyRef = useRef<HTMLDivElement>(null);
   const tc = state.globalTension >= 75 ? '#ff2d55' : state.globalTension >= 55 ? '#ff6a00' : state.globalTension >= 30 ? '#ffd700' : '#00ff9d';
   const ind = state.indicators;
   const alli = state.alliances;
   const oilTrend = ind.oilPrice > 100 ? '▲ HIGH' : '▼ LOW';
   const sp500Trend = ind.sp500 < 5000 ? '▼' : '▲';
+
+  function jumpTo(id: string) {
+    const el = bodyRef.current?.querySelector(`#${id}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   return (
     <div className="panel rounded-xl flex flex-col h-full overflow-hidden" style={{ borderColor: 'rgba(120,60,255,0.2)' }}>
@@ -287,33 +301,53 @@ export default function IntelPanel({ state, isExpanded = false, onToggleExpand }
         <div className="mt-3">
           <NarrativeCountdown state={state} />
         </div>
+
+        {/* ── Quick-jump anchors ── */}
+        <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t" style={{ borderColor: 'rgba(120,60,255,0.12)' }}>
+          {ANCHORS.map(a => (
+            <button key={a.id} onClick={() => jumpTo(a.id)}
+              className="font-mono rounded-full transition-all"
+              style={{
+                fontSize: '9px', letterSpacing: '0.06em', padding: '3px 9px',
+                color: a.color, background: `${a.color.replace('0.7', '0.08')}`,
+                border: `1px solid ${a.color.replace('0.7', '0.3')}`,
+                cursor: 'pointer',
+              }}>
+              {a.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0">
+      <div ref={bodyRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-0">
 
         {/* Live World News */}
-        <LiveNewsSection />
+        <div id="intel-news">
+          <LiveNewsSection />
+        </div>
 
         {/* Economic Pressure */}
-        <Section title="ECONOMIC PRESSURE" color="rgba(255,215,0,0.65)" flag="💹">
-          <div className="grid grid-cols-2 gap-2.5 mb-4">
-            <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.2)' }}>
-              <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>OIL / BBL</div>
-              <div className="font-orbitron font-bold" style={{ color: '#ffd700', fontSize: '22px' }}>${ind.oilPrice}</div>
-              <div className="font-mono font-bold" style={{ color: ind.oilPrice > 100 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{oilTrend}</div>
+        <div id="intel-economic">
+          <Section title="ECONOMIC PRESSURE" color="rgba(255,215,0,0.65)" flag="💹">
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
+              <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.2)' }}>
+                <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>OIL / BBL</div>
+                <div className="font-orbitron font-bold" style={{ color: '#ffd700', fontSize: '22px' }}>${ind.oilPrice}</div>
+                <div className="font-mono font-bold" style={{ color: ind.oilPrice > 100 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{oilTrend}</div>
+              </div>
+              <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,245,255,0.07)', border: '1px solid rgba(0,245,255,0.15)' }}>
+                <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>S&amp;P 500</div>
+                <div className="font-orbitron font-bold" style={{ color: '#00f5ff', fontSize: '22px' }}>{ind.sp500}</div>
+                <div className="font-mono font-bold" style={{ color: ind.sp500 < 4800 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{sp500Trend}</div>
+              </div>
             </div>
-            <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,245,255,0.07)', border: '1px solid rgba(0,245,255,0.15)' }}>
-              <div className="font-mono" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>S&amp;P 500</div>
-              <div className="font-orbitron font-bold" style={{ color: '#00f5ff', fontSize: '22px' }}>{ind.sp500}</div>
-              <div className="font-mono font-bold" style={{ color: ind.sp500 < 4800 ? '#ff2d55' : '#00ff9d', fontSize: '11px' }}>{sp500Trend}</div>
-            </div>
-          </div>
-          <Bar value={ind.vixFear} color="#ff6a00" label="VIX FEAR INDEX" />
-          <Bar value={ind.shippingDisruption} color="#ff2d55" label="SHIPPING DISRUPTION" />
-          <Bar value={ind.recessionRisk} color="#ffd700" label="RECESSION RISK" />
-          <Bar value={ind.sanctionsPressure} color="#b44fff" label="SANCTIONS PRESSURE" />
-        </Section>
+            <Bar value={ind.vixFear} color="#ff6a00" label="VIX FEAR INDEX" />
+            <Bar value={ind.shippingDisruption} color="#ff2d55" label="SHIPPING DISRUPTION" />
+            <Bar value={ind.recessionRisk} color="#ffd700" label="RECESSION RISK" />
+            <Bar value={ind.sanctionsPressure} color="#b44fff" label="SANCTIONS PRESSURE" />
+          </Section>
+        </div>
 
         {/* Conflict Zones */}
         <Section title="ACTIVE CONFLICT ZONES" color="rgba(255,45,85,0.75)">
@@ -337,47 +371,53 @@ export default function IntelPanel({ state, isExpanded = false, onToggleExpand }
         </Section>
 
         {/* Alliance Matrix */}
-        <Section title="ALLIANCE MATRIX" color="rgba(180,79,255,0.65)" flag="🌐">
-          <Bar value={alli.natoCohesion} color="#00f5ff" label="NATO COHESION" />
-          <Bar value={alli.usEuroAlignment} color="#4488ff" label="US-EUROPE ALIGNMENT" />
-          <Bar value={alli.chinaRussiaCoord} color="#ff2d55" label="CHINA-RUSSIA COORD." />
-          <Bar value={alli.iranProxyNetwork} color="#00ff9d" label="IRAN PROXY NETWORK" />
-          <Bar value={alli.bricsSolidarity} color="#ffd700" label="BRICS SOLIDARITY" />
-        </Section>
+        <div id="intel-alliances">
+          <Section title="ALLIANCE MATRIX" color="rgba(180,79,255,0.65)" flag="🌐">
+            <Bar value={alli.natoCohesion} color="#00f5ff" label="NATO COHESION" />
+            <Bar value={alli.usEuroAlignment} color="#4488ff" label="US-EUROPE ALIGNMENT" />
+            <Bar value={alli.chinaRussiaCoord} color="#ff2d55" label="CHINA-RUSSIA COORD." />
+            <Bar value={alli.iranProxyNetwork} color="#00ff9d" label="IRAN PROXY NETWORK" />
+            <Bar value={alli.bricsSolidarity} color="#ffd700" label="BRICS SOLIDARITY" />
+          </Section>
+        </div>
 
         {/* Probable Outcomes */}
-        <Section title="PROBABLE OUTCOMES" color="rgba(0,245,255,0.55)">
-          <div className="space-y-3">
-            {state.outcomes.map(o => (
-              <div key={o.id} className="rounded-lg p-3.5" style={{ background: `${o.color}08`, border: `1px solid ${o.color}28` }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-orbitron font-bold" style={{ color: '#ffffff', fontSize: '13px' }}>{o.label}</span>
-                  <span className="ml-auto font-orbitron font-bold" style={{ color: o.color, fontSize: '22px' }}>{o.probability}%</span>
-                  <span style={{ color: o.trend==='up'?'#ff2d55':o.trend==='down'?'#00ff9d':'rgba(255,255,255,0.3)', fontSize: '14px' }}>
-                    {o.trend==='up'?'▲':o.trend==='down'?'▼':'—'}
-                  </span>
+        <div id="intel-outcomes">
+          <Section title="PROBABLE OUTCOMES" color="rgba(0,245,255,0.55)">
+            <div className="space-y-3">
+              {state.outcomes.map(o => (
+                <div key={o.id} className="rounded-lg p-3.5" style={{ background: `${o.color}08`, border: `1px solid ${o.color}28` }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-orbitron font-bold" style={{ color: '#ffffff', fontSize: '13px' }}>{o.label}</span>
+                    <span className="ml-auto font-orbitron font-bold" style={{ color: o.color, fontSize: '22px' }}>{o.probability}%</span>
+                    <span style={{ color: o.trend==='up'?'#ff2d55':o.trend==='down'?'#00ff9d':'rgba(255,255,255,0.3)', fontSize: '14px' }}>
+                      {o.trend==='up'?'▲':o.trend==='down'?'▼':'—'}
+                    </span>
+                  </div>
+                  <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.4)' }}>
+                    <div className="h-full rounded-full transition-all duration-1000"
+                      style={{ width: `${o.probability}%`, background: `linear-gradient(90deg,${o.color}60,${o.color})`, boxShadow: `0 0 8px ${o.color}55` }} />
+                  </div>
                 </div>
-                <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.4)' }}>
-                  <div className="h-full rounded-full transition-all duration-1000"
-                    style={{ width: `${o.probability}%`, background: `linear-gradient(90deg,${o.color}60,${o.color})`, boxShadow: `0 0 8px ${o.color}55` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
+              ))}
+            </div>
+          </Section>
+        </div>
 
         {/* Breaking Intel */}
-        <Section title="BREAKING INTEL" color="rgba(0,255,157,0.55)" flag="📡">
-          <div className="space-y-2">
-            {state.breakingIntel.slice(0, 8).map((intel, i) => (
-              <div key={i} className="flex items-start gap-2.5 rounded-lg px-3 py-2.5"
-                style={{ background: 'rgba(0,255,157,0.05)', border: '1px solid rgba(0,255,157,0.14)' }}>
-                <span style={{ color: '#00ff9d', fontSize: '12px', marginTop: '1px', flexShrink: 0 }}>▸</span>
-                <p className="font-mono" style={{ color: 'rgba(255,255,255,0.85)', fontSize: '12px', lineHeight: '1.5' }}>{intel}</p>
-              </div>
-            ))}
-          </div>
-        </Section>
+        <div id="intel-breaking">
+          <Section title="BREAKING INTEL" color="rgba(0,255,157,0.55)" flag="📡">
+            <div className="space-y-2">
+              {state.breakingIntel.slice(0, 8).map((intel, i) => (
+                <div key={i} className="flex items-start gap-2.5 rounded-lg px-3 py-2.5"
+                  style={{ background: 'rgba(0,255,157,0.05)', border: '1px solid rgba(0,255,157,0.14)' }}>
+                  <span style={{ color: '#00ff9d', fontSize: '12px', marginTop: '1px', flexShrink: 0 }}>▸</span>
+                  <p className="font-mono" style={{ color: 'rgba(255,255,255,0.85)', fontSize: '12px', lineHeight: '1.5' }}>{intel}</p>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
       </div>
     </div>
   );

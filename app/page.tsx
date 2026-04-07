@@ -35,6 +35,7 @@ export default function Home() {
   const [leftExpanded, setLeftExpanded]   = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [mobileMapCollapsed, setMobileMapCollapsed] = useState(false);
+  const prevTabRef = useRef<string>('feed');
   const [chatOpen, setChatOpen]         = useState(false);
   const [botPanelOpen, setBotPanelOpen] = useState(false);
   const [intelExpanded, setIntelExpanded] = useState(false);
@@ -72,6 +73,18 @@ export default function Home() {
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - simStartTime) / 1000)), 1000);
     return () => clearInterval(t);
   }, [simStartTime]);
+
+  // On mobile: auto-hide map when switching to content-heavy tabs
+  useEffect(() => {
+    if (!isMobile) return;
+    if ((activeTab === 'intel' || activeTab === 'leaders') && prevTabRef.current === 'feed') {
+      setMobileMapCollapsed(true);
+    }
+    if (activeTab === 'feed' && prevTabRef.current !== 'feed') {
+      setMobileMapCollapsed(false);
+    }
+    prevTabRef.current = activeTab;
+  }, [activeTab, isMobile]);
 
   const control = useCallback(async (action: string, scenarioId?: string) => {
     await fetch('/api/control', {
@@ -569,7 +582,7 @@ export default function Home() {
             {/* Center: World Map + Live Feed */}
             <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0 relative">
               <div className="rounded-xl overflow-hidden panel"
-                style={{ flex: feedExpanded ? '1 1 30%' : '1 1 74%', minHeight: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
+                style={{ flex: feedExpanded ? '1 1 28%' : '1 1 62%', minHeight: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
                 <WorldMap
                   {...mapProps}
                   isExpanded={false}
@@ -578,7 +591,7 @@ export default function Home() {
                   onInitiate={() => control('start')}
                 />
               </div>
-              <div className="overflow-hidden" style={{ flex: feedExpanded ? '1 1 70%' : '1 1 26%', minHeight: 0 }}>
+              <div className="overflow-hidden" style={{ flex: feedExpanded ? '1 1 72%' : '1 1 38%', minHeight: 0 }}>
                 <LiveFeed
                   events={state.events}
                   messages={state.messages}
