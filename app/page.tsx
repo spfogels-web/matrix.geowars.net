@@ -180,7 +180,7 @@ export default function Home() {
             <div className="flex items-center gap-2 px-3" style={{ height: '48px' }}>
               <div className="flex items-center gap-1.5 shrink-0">
                 <div className="w-2 h-2 rounded-full status-blink" style={{ backgroundColor: tc, boxShadow: `0 0 8px ${tc}` }} />
-                <span className="font-orbitron font-black neon-cyan" style={{ fontSize: '13px', letterSpacing: '0.22em' }}>GWM</span>
+                <span className="font-orbitron font-black" style={{ fontSize: '11px', letterSpacing: '0.18em', color: '#00f5ff', textShadow: '0 0 10px rgba(0,245,255,0.6)' }}>GEOWARS</span>
               </div>
 
               <div className="h-5 w-px shrink-0" style={{ background: 'rgba(120,60,255,0.3)' }} />
@@ -306,11 +306,11 @@ export default function Home() {
 
             {/* Connect Wallet row */}
             <div className="shrink-0 flex items-center justify-center px-3" style={{
-              height: '44px',
+              height: '36px',
               background: 'rgba(4,2,12,0.98)',
               borderBottom: '1px solid rgba(0,245,255,0.1)',
             }}>
-              <WalletButton />
+              <WalletButton compact />
             </div>
 
             {/* Unified tab bar: AGENTS · COMMS · BOARD | FEED · LEADERS · INTEL */}

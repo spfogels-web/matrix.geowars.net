@@ -25,7 +25,7 @@ declare global {
 
 type WalletType = 'phantom' | 'solflare';
 
-export default function WalletButton() {
+export default function WalletButton({ compact = false }: { compact?: boolean }) {
   const { wallet, balance, setWallet } = useGame();
   const [connecting, setConnecting] = useState<WalletType | null>(null);
   const [open, setOpen] = useState(false);
@@ -161,17 +161,19 @@ export default function WalletButton() {
         disabled={isConnecting}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className="font-mono px-5 py-2.5 rounded-lg border transition-all shrink-0 flex items-center gap-2"
+        className="font-mono rounded-lg border transition-all shrink-0 flex items-center gap-1.5"
         style={{
-          fontSize: '13px', letterSpacing: '0.1em',
+          fontSize: compact ? '10px' : '13px',
+          padding: compact ? '5px 14px' : '10px 20px',
+          letterSpacing: '0.1em',
           color: '#00ff9d',
           borderColor: hovered ? '#00ff9d' : 'rgba(0,255,157,0.4)',
           background: hovered ? 'rgba(0,255,157,0.18)' : 'rgba(0,255,157,0.07)',
-          boxShadow: hovered ? '0 0 20px rgba(0,255,157,0.25), inset 0 0 12px rgba(0,255,157,0.08)' : 'none',
-          transform: hovered ? 'scale(1.03)' : 'scale(1)',
+          boxShadow: hovered ? '0 0 16px rgba(0,255,157,0.2), inset 0 0 8px rgba(0,255,157,0.06)' : 'none',
+          transform: hovered ? 'scale(1.02)' : 'scale(1)',
           opacity: isConnecting ? 0.6 : 1,
         }}>
-        <span style={{ fontSize: '16px' }}>◎</span>
+        <span style={{ fontSize: compact ? '12px' : '16px' }}>◎</span>
         {isConnecting ? 'CONNECTING...' : 'CONNECT WALLET'}
       </button>
     );

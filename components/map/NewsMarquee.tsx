@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Item { text: string; source?: string; isLive?: boolean; }
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function NewsMarquee({ simIntel, tension }: Props) {
+  const isMobile = useIsMobile();
   const [liveNews, setLiveNews] = useState<{ title: string; source: string }[]>([]);
   const [fetched, setFetched] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -55,15 +57,17 @@ export default function NewsMarquee({ simIntel, tension }: Props) {
     <>
       {/* ── Marquee bar ── */}
       <div className="absolute top-0 left-0 right-0 flex items-center overflow-hidden"
-        style={{ zIndex: 620, height: '40px', background: 'rgba(0,0,0,0.92)', borderBottom: `1px solid ${borderColor}`, backdropFilter: 'blur(8px)' }}>
+        style={{ zIndex: 620, height: isMobile ? '32px' : '40px', background: 'rgba(0,0,0,0.92)', borderBottom: `1px solid ${borderColor}`, backdropFilter: 'blur(8px)' }}>
 
         {/* LIVE badge */}
-        <div className="shrink-0 flex items-center gap-2 px-3 font-orbitron font-bold"
-          style={{ background: `${badgeColor}22`, borderRight: `1px solid ${badgeColor}44`, height: '100%', fontSize: '11px', color: badgeColor, letterSpacing: '0.18em', whiteSpace: 'nowrap' }}>
-          <span className="status-blink" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: badgeColor, boxShadow: `0 0 8px ${badgeColor}` }} />
+        <div className="shrink-0 flex items-center gap-1.5 font-orbitron font-bold"
+          style={{ background: `${badgeColor}22`, borderRight: `1px solid ${badgeColor}44`, height: '100%',
+            fontSize: isMobile ? '9px' : '11px', color: badgeColor, letterSpacing: '0.15em', whiteSpace: 'nowrap',
+            padding: isMobile ? '0 8px' : '0 12px' }}>
+          <span className="status-blink" style={{ display: 'inline-block', width: isMobile ? '6px' : '8px', height: isMobile ? '6px' : '8px', borderRadius: '50%', background: badgeColor, boxShadow: `0 0 8px ${badgeColor}`, flexShrink: 0 }} />
           WORLD FEED
           {fetched && liveNews.length > 0 && (
-            <span style={{ fontSize: '9px', color: 'rgba(0,245,255,0.65)', fontFamily: 'monospace', marginLeft: '4px' }}>
+            <span style={{ fontSize: '8px', color: 'rgba(0,245,255,0.65)', fontFamily: 'monospace', marginLeft: '3px' }}>
               {liveNews.length} LIVE
             </span>
           )}
@@ -74,10 +78,10 @@ export default function NewsMarquee({ simIntel, tension }: Props) {
           <div style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', animation: `ticker-move 150s linear infinite`, willChange: 'transform' }}>
             {display.map((item, i) => (
               <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                <span style={{ color: item.isLive ? '#ffd700' : 'rgba(255,45,85,0.7)', fontSize: '14px', margin: '0 20px' }}>
+                <span style={{ color: item.isLive ? '#ffd700' : 'rgba(255,45,85,0.7)', fontSize: isMobile ? '10px' : '14px', margin: isMobile ? '0 12px' : '0 20px' }}>
                   {item.isLive ? '◆' : '⬥'}
                 </span>
-                {item.source && (
+                {item.source && !isMobile && (
                   <span className="font-orbitron font-bold" style={{
                     fontSize: '10px', letterSpacing: '0.12em', marginRight: '10px',
                     color: item.isLive ? '#ffd700' : 'rgba(255,45,85,0.9)',
@@ -89,7 +93,7 @@ export default function NewsMarquee({ simIntel, tension }: Props) {
                   </span>
                 )}
                 <span className="font-mono" style={{
-                  fontSize: '16px',
+                  fontSize: isMobile ? '11px' : '16px',
                   color: item.isLive ? 'rgba(255,255,255,0.93)' : 'rgba(255,180,180,0.93)',
                   letterSpacing: '0.03em',
                 }}>
@@ -103,21 +107,24 @@ export default function NewsMarquee({ simIntel, tension }: Props) {
         {/* Expand toggle */}
         <button
           onClick={() => setExpanded(v => !v)}
-          className="shrink-0 font-orbitron font-bold px-3 transition-all"
+          className="shrink-0 font-orbitron font-bold transition-all"
           style={{
-            height: '100%', fontSize: '10px', letterSpacing: '0.14em', whiteSpace: 'nowrap',
+            height: '100%', fontSize: isMobile ? '8px' : '10px', letterSpacing: '0.12em', whiteSpace: 'nowrap',
+            padding: isMobile ? '0 8px' : '0 12px',
             color: expanded ? badgeColor : 'rgba(200,210,240,0.5)',
             borderLeft: `1px solid ${borderColor}`,
             background: expanded ? `${badgeColor}18` : 'transparent',
           }}>
-          {expanded ? '▲ CLOSE' : '▼ EXPAND'}
+          {expanded ? '▲' : '▼ EXPAND'}
         </button>
 
-        {/* UTC clock */}
-        <div className="shrink-0 px-3 font-mono"
-          style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', borderLeft: `1px solid ${borderColor}`, height: '100%', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-          {new Date().toUTCString().slice(17, 25)} UTC
-        </div>
+        {/* UTC clock — desktop only */}
+        {!isMobile && (
+          <div className="shrink-0 px-3 font-mono"
+            style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', borderLeft: `1px solid ${borderColor}`, height: '100%', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+            {new Date().toUTCString().slice(17, 25)} UTC
+          </div>
+        )}
       </div>
 
       {/* ── Expanded news panel ── */}

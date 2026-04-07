@@ -695,15 +695,15 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
     <div
       className="absolute"
       style={{
-        bottom: 36, left: 12, zIndex: 500,
-        background: expanded ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.88)',
+        bottom: 28, left: 8, zIndex: 500,
+        background: expanded ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.82)',
         border: `1px solid ${borderColor}`,
-        borderRadius: '10px',
-        padding: expanded ? '14px 20px' : '9px 16px',
+        borderRadius: '8px',
+        padding: expanded ? '12px 18px' : '5px 10px',
         backdropFilter: 'blur(12px)',
         boxShadow: glowShadow,
         transition: 'border-color 0.3s, box-shadow 0.3s, padding 0.25s',
-        minWidth: expanded ? '280px' : '190px',
+        minWidth: expanded ? '260px' : '160px',
         cursor: 'pointer',
         userSelect: 'none',
       }}
@@ -712,8 +712,8 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
     >
       {/* Label row */}
       <div className="flex items-center justify-between" style={{ marginBottom: expanded ? '8px' : '4px' }}>
-        <div className="font-mono" style={{ color: 'rgba(255,255,255,0.45)', fontSize: expanded ? '9px' : '8px', letterSpacing: '0.22em' }}>
-          🌍 WORLD POPULATION
+        <div className="font-mono" style={{ color: 'rgba(255,255,255,0.38)', fontSize: expanded ? '8px' : '7px', letterSpacing: '0.18em' }}>
+          🌍 WORLD POP
         </div>
         <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', marginLeft: '8px' }}>
           {expanded ? '▼' : '▲'}
@@ -723,7 +723,7 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
       {/* Main number */}
       <div className="font-orbitron font-black" style={{
         color: '#ffffff',
-        fontSize: expanded ? '22px' : '17px',
+        fontSize: expanded ? '20px' : '14px',
         lineHeight: 1,
         letterSpacing: expanded ? '0.03em' : '0.04em',
         fontVariantNumeric: 'tabular-nums',
@@ -739,11 +739,11 @@ function WorldPopCounter({ deaths, isRunning }: { deaths: number; isRunning: boo
 
       {/* Stats row — always visible */}
       <div className="flex items-center gap-3 mt-2">
-        <span className="font-mono" style={{ color: '#00ff9d', fontSize: expanded ? '10px' : '8px' }}>
-          ▲ {isRunning ? '+4.4/s births' : 'STANDBY'}
+        <span className="font-mono" style={{ color: '#00ff9d', fontSize: expanded ? '9px' : '7px' }}>
+          ▲ {isRunning ? '+4.4/s' : 'STANDBY'}
         </span>
         {deaths > 0 && (
-          <span className="font-mono" style={{ color: '#ff2d55', fontSize: expanded ? '10px' : '8px' }}>
+          <span className="font-mono" style={{ color: '#ff2d55', fontSize: expanded ? '9px' : '7px' }}>
             ▼ {deaths >= 1_000_000 ? (deaths / 1_000_000).toFixed(2) + 'M' : deaths >= 1000 ? (deaths / 1000).toFixed(1) + 'K' : deaths} sim deaths
           </span>
         )}
