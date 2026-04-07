@@ -268,21 +268,27 @@ export default function Home() {
                 GEOWARS MATRIX
               </div>
               <div style={{ flex: 1, overflow: 'hidden', height: '100%', position: 'relative' }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', height: '100%',
-                  animation: 'ticker-scroll 18s linear infinite',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {(state.breakingIntel?.length ? state.breakingIntel : ['MONITORING GLOBAL THREAT VECTORS', 'AI AGENTS STANDING BY', 'SIMULATION READY']).map((item, i) => (
-                    <span key={i} className="font-mono" style={{
-                      color: 'rgba(0,245,255,0.7)', fontSize: '9px', letterSpacing: '0.06em',
-                      paddingRight: '60px',
+                {(() => {
+                  const items = state.breakingIntel?.length ? state.breakingIntel : ['MONITORING GLOBAL THREAT VECTORS', 'AI AGENTS STANDING BY', 'SIMULATION READY'];
+                  const doubled = [...items, ...items];
+                  return (
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', height: '100%',
+                      animation: 'ticker-scroll 28s linear infinite',
+                      whiteSpace: 'nowrap',
                     }}>
-                      <span style={{ color: 'rgba(255,215,0,0.6)', marginRight: '6px' }}>◆</span>
-                      {item}
-                    </span>
-                  ))}
-                </div>
+                      {doubled.map((item, i) => (
+                        <span key={i} className="font-mono" style={{
+                          color: 'rgba(0,245,255,0.7)', fontSize: '9px', letterSpacing: '0.06em',
+                          paddingRight: '60px',
+                        }}>
+                          <span style={{ color: 'rgba(255,215,0,0.6)', marginRight: '6px' }}>◆</span>
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
