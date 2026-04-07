@@ -174,31 +174,41 @@ export default function Home() {
         /* ── MOBILE LAYOUT ─────────────────────────────────────────────── */
         <>
           {/* Mobile header */}
-          <header className="shrink-0" style={{ background: 'rgba(8,3,20,0.98)', borderBottom: '1px solid rgba(120,60,255,0.25)', position: 'relative', zIndex: 80 }}>
+          <header className="shrink-0" style={{
+            background: 'linear-gradient(180deg, rgba(6,2,18,1) 0%, rgba(8,3,20,0.98) 100%)',
+            borderBottom: '1px solid rgba(0,245,255,0.22)',
+            position: 'relative', zIndex: 80,
+            boxShadow: '0 2px 20px rgba(0,0,0,0.6)',
+          }}>
 
-            <div className="flex items-center gap-2 px-3" style={{ height: '52px' }}>
+            <div className="flex items-center gap-2 px-3" style={{ height: '54px' }}>
               {/* Brand */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <div className="w-2.5 h-2.5 rounded-full status-blink" style={{ backgroundColor: tc, boxShadow: `0 0 10px ${tc}` }} />
-                <span className="font-orbitron font-black" style={{ fontSize: '14px', letterSpacing: '0.2em', color: '#00f5ff', textShadow: '0 0 14px rgba(0,245,255,0.8)' }}>GEOWARS</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="w-3 h-3 rounded-full status-blink" style={{ backgroundColor: tc, boxShadow: `0 0 12px ${tc}` }} />
+                <div className="flex flex-col" style={{ lineHeight: 1 }}>
+                  <span className="font-orbitron font-black" style={{ fontSize: '15px', letterSpacing: '0.22em', color: '#00f5ff', textShadow: '0 0 16px rgba(0,245,255,0.9)' }}>GEOWARS</span>
+                  <span className="font-orbitron font-bold" style={{ fontSize: '7px', letterSpacing: '0.3em', color: 'rgba(0,245,255,0.45)', marginTop: '-1px' }}>MATRIX</span>
+                </div>
               </div>
 
-              <div className="h-6 w-px shrink-0" style={{ background: 'rgba(120,60,255,0.35)' }} />
+              <div className="h-7 w-px shrink-0" style={{ background: 'rgba(120,60,255,0.4)' }} />
 
               {/* Tension */}
-              <span className="font-orbitron font-bold shrink-0" style={{ color: tc, fontSize: '26px', lineHeight: 1, textShadow: `0 0 16px ${tc}` }}>
-                {state.globalTension}
-              </span>
-              <span className="font-mono shrink-0" style={{ color: 'rgba(200,210,240,0.35)', fontSize: '11px' }}>/100</span>
+              <div className="flex items-baseline gap-1 shrink-0">
+                <span className="font-orbitron font-bold" style={{ color: tc, fontSize: '28px', lineHeight: 1, textShadow: `0 0 18px ${tc}` }}>
+                  {state.globalTension}
+                </span>
+                <span className="font-mono" style={{ color: 'rgba(200,210,240,0.3)', fontSize: '11px' }}>/100</span>
+              </div>
               <span className="font-mono px-2 py-0.5 rounded border shrink-0"
-                style={{ color: tc, borderColor: `${tc}60`, background: `${tc}12`, fontSize: '9px', letterSpacing: '0.1em' }}>
+                style={{ color: tc, borderColor: `${tc}55`, background: `${tc}14`, fontSize: '9px', letterSpacing: '0.1em' }}>
                 {state.threatLevel.replace('_', ' ')}
               </span>
 
               <div className="flex-1" />
 
               <span className="font-mono font-bold shrink-0" style={{
-                color: isProcessing ? '#ffd700' : state.isRunning && !state.isPaused ? '#00ff9d' : 'rgba(200,210,240,0.3)',
+                color: isProcessing ? '#ffd700' : state.isRunning && !state.isPaused ? '#00ff9d' : 'rgba(200,210,240,0.28)',
                 fontSize: '10px', letterSpacing: '0.06em',
               }}>
                 {runLabel}
@@ -207,17 +217,17 @@ export default function Home() {
               <div className="flex items-center gap-1.5 shrink-0">
                 {!state.isRunning ? (
                   <button onClick={() => control('start')} className="hdr-btn hdr-btn-green font-orbitron font-bold"
-                    style={{ fontSize: '11px', padding: '6px 13px' }}>
+                    style={{ fontSize: '11px', padding: '6px 14px' }}>
                     ▶ START
                   </button>
                 ) : (
                   <>
                     <button onClick={() => control('pause')} className="hdr-btn hdr-btn-yellow"
-                      style={{ fontSize: '11px', padding: '6px 10px' }}>
+                      style={{ fontSize: '11px', padding: '6px 11px' }}>
                       {state.isPaused ? '▶' : '⏸'}
                     </button>
                     <button onClick={() => control('stop')} className="hdr-btn hdr-btn-orange"
-                      style={{ fontSize: '11px', padding: '6px 10px' }}>
+                      style={{ fontSize: '11px', padding: '6px 11px' }}>
                       ■
                     </button>
                   </>
