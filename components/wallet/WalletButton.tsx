@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useGame } from '@/lib/predict/GameContext';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 declare global {
   interface Window {
@@ -25,8 +26,19 @@ declare global {
 
 type WalletType = 'phantom' | 'solflare';
 
+// Deep-link opens the site inside the wallet's in-app browser on mobile
+function phantomDeepLink() {
+  const url = encodeURIComponent('https://matrix.geowars.net');
+  return `https://phantom.app/ul/browse/${url}?ref=${url}`;
+}
+function solflareDeepLink() {
+  const url = encodeURIComponent('https://matrix.geowars.net');
+  return `https://solflare.com/ul/v1/browse/${url}?ref=${url}`;
+}
+
 export default function WalletButton({ compact = false }: { compact?: boolean }) {
   const { wallet, balance, setWallet } = useGame();
+  const isMobile = useIsMobile();
   const [connecting, setConnecting] = useState<WalletType | null>(null);
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -65,7 +77,11 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
   }, [setWallet]);
 
   async function connectPhantom() {
-    if (!window.solana?.isPhantom) { window.open('https://phantom.app/', '_blank'); return; }
+    if (!window.solana?.isPhantom) {
+      // On mobile: deep link opens the site inside Phantom's browser
+      window.location.href = phantomDeepLink();
+      return;
+    }
     setConnecting('phantom');
     try {
       const res = await window.solana.connect();
@@ -75,7 +91,11 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
   }
 
   async function connectSolflare() {
-    if (!window.solflare?.isSolflare) { window.open('https://solflare.com/', '_blank'); return; }
+    if (!window.solflare?.isSolflare) {
+      // On mobile: deep link opens the site inside Solflare's browser
+      window.location.href = solflareDeepLink();
+      return;
+    }
     setConnecting('solflare');
     try {
       await window.solflare.connect();
@@ -99,16 +119,30 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
     if (picking) {
       return (
         <div className="relative shrink-0">
-          <div className="absolute right-0 top-full mt-2 rounded-2xl overflow-hidden z-50"
+          {/* Dropdown — centered on mobile, right-aligned on desktop */}
+          <div
+            className="rounded-2xl overflow-hidden"
             style={{
-              width: '260px',
+              position: 'fixed',
+              top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: isMobile ? 'min(300px, 90vw)' : '280px',
+              zIndex: 400,
               background: 'rgba(4,2,14,0.99)',
-              border: '1px solid rgba(0,255,157,0.3)',
+              border: '1px solid rgba(0,255,157,0.35)',
               backdropFilter: 'blur(24px)',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.9), 0 0 40px rgba(0,255,157,0.06)',
+              boxShadow: '0 12px 60px rgba(0,0,0,0.95), 0 0 40px rgba(0,255,157,0.08)',
             }}>
-            <div className="px-5 py-4 border-b" style={{ borderColor: 'rgba(0,255,157,0.1)' }}>
-              <div className="font-orbitron font-bold" style={{ color: '#00ff9d', fontSize: '11px', letterSpacing: '0.2em' }}>SELECT WALLET</div>
+
+            <div className="px-5 py-4 border-b" style={{ borderColor: 'rgba(0,255,157,0.12)' }}>
+              <div className="font-orbitron font-bold" style={{ color: '#00ff9d', fontSize: '12px', letterSpacing: '0.2em' }}>
+                CONNECT WALLET
+              </div>
+              {isMobile && (
+                <div className="font-mono mt-1" style={{ color: 'rgba(0,255,157,0.4)', fontSize: '9px', letterSpacing: '0.06em' }}>
+                  Opens GeoWars inside your wallet app
+                </div>
+              )}
             </div>
 
             {/* Phantom */}
@@ -118,6 +152,8 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
               installed={hasPhantom}
               loading={connecting === 'phantom'}
               accentColor="#ab9ff2"
+              isMobile={isMobile}
+              mobileLabel={hasPhantom ? 'Detected ✓' : 'Open in Phantom app →'}
               onClick={connectPhantom}
             />
 
@@ -128,29 +164,22 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
               installed={hasSolflare}
               loading={connecting === 'solflare'}
               accentColor="#fc8c14"
+              isMobile={isMobile}
+              mobileLabel={hasSolflare ? 'Detected ✓' : 'Open in Solflare app →'}
               onClick={connectSolflare}
             />
 
             <div className="px-5 py-3">
               <button onClick={() => setPicking(false)}
-                className="w-full font-mono py-1.5 rounded-lg border transition-all"
-                style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.1)', background: 'transparent' }}>
+                className="w-full font-mono py-2 rounded-lg border transition-all"
+                style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', borderColor: 'rgba(255,255,255,0.1)', background: 'transparent', cursor: 'pointer' }}>
                 CANCEL
               </button>
             </div>
           </div>
 
-          {/* Invisible backdrop to close picker */}
-          <button className="fixed inset-0 z-40" style={{ background: 'transparent', border: 'none' }} onClick={() => setPicking(false)} />
-
-          {/* Trigger button (stays visible) */}
-          <button
-            onClick={() => setPicking(false)}
-            className="hdr-btn-green font-mono px-5 py-2.5 rounded-lg border flex items-center gap-2 shrink-0"
-            style={{ fontSize: '13px', letterSpacing: '0.1em', position: 'relative', zIndex: 50 }}>
-            <span style={{ fontSize: '16px' }}>◎</span>
-            CONNECT WALLET
-          </button>
+          {/* Backdrop */}
+          <button className="fixed inset-0" style={{ zIndex: 399, background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'default' }} onClick={() => setPicking(false)} />
         </div>
       );
     }
@@ -169,9 +198,9 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
           color: '#00ff9d',
           borderColor: hovered ? '#00ff9d' : 'rgba(0,255,157,0.4)',
           background: hovered ? 'rgba(0,255,157,0.18)' : 'rgba(0,255,157,0.07)',
-          boxShadow: hovered ? '0 0 16px rgba(0,255,157,0.2), inset 0 0 8px rgba(0,255,157,0.06)' : 'none',
-          transform: hovered ? 'scale(1.02)' : 'scale(1)',
+          boxShadow: hovered ? '0 0 16px rgba(0,255,157,0.2)' : 'none',
           opacity: isConnecting ? 0.6 : 1,
+          cursor: 'pointer',
         }}>
         <span style={{ fontSize: compact ? '12px' : '16px' }}>◎</span>
         {isConnecting ? 'CONNECTING...' : 'CONNECT WALLET'}
@@ -188,16 +217,18 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
         onMouseLeave={() => setHovered(false)}
         className="font-mono px-4 py-2.5 rounded-lg border transition-all flex items-center gap-2.5"
         style={{
-          fontSize: '12px', letterSpacing: '0.06em',
+          fontSize: compact ? '11px' : '12px',
+          letterSpacing: '0.06em',
+          padding: compact ? '5px 12px' : '10px 16px',
           color: '#00ff9d',
           borderColor: open || hovered ? '#00ff9d' : 'rgba(0,255,157,0.35)',
           background: open || hovered ? 'rgba(0,255,157,0.16)' : 'rgba(0,255,157,0.07)',
-          boxShadow: open || hovered ? '0 0 18px rgba(0,255,157,0.2), inset 0 0 10px rgba(0,255,157,0.06)' : 'none',
-          transform: hovered ? 'scale(1.02)' : 'scale(1)',
+          boxShadow: open || hovered ? '0 0 18px rgba(0,255,157,0.2)' : 'none',
+          cursor: 'pointer',
         }}>
         <span className="status-blink" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#00ff9d', boxShadow: '0 0 10px #00ff9d', flexShrink: 0 }} />
         <span style={{ fontWeight: 'bold' }}>{short}</span>
-        <span className="font-orbitron" style={{ color: '#00ff9d', fontSize: '12px', opacity: 0.8 }}>
+        <span className="font-orbitron" style={{ color: '#00ff9d', fontSize: compact ? '11px' : '12px', opacity: 0.8 }}>
           {balance.toFixed(0)} <span style={{ opacity: 0.5, fontSize: '10px' }}>GWM</span>
         </span>
         <span style={{ opacity: 0.45, fontSize: '10px' }}>{open ? '▲' : '▼'}</span>
@@ -206,9 +237,16 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 rounded-2xl overflow-hidden z-50"
+          <div className="rounded-2xl overflow-hidden"
             style={{
-              width: '240px',
+              position: 'fixed',
+              top: isMobile ? '50%' : 'auto',
+              left: isMobile ? '50%' : 'auto',
+              transform: isMobile ? 'translate(-50%, -50%)' : 'none',
+              right: isMobile ? 'auto' : 0,
+              marginTop: isMobile ? 0 : '8px',
+              width: isMobile ? 'min(280px, 90vw)' : '240px',
+              zIndex: 400,
               background: 'rgba(4,2,14,0.99)',
               border: '1px solid rgba(0,255,157,0.25)',
               backdropFilter: 'blur(24px)',
@@ -227,8 +265,8 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
             </div>
             <div className="px-5 py-4">
               <button onClick={disconnect}
-                className="hdr-btn-red w-full font-mono py-2 rounded-lg border transition-all"
-                style={{ fontSize: '12px' }}>
+                className="w-full font-mono py-2 rounded-lg border transition-all"
+                style={{ fontSize: '12px', color: 'rgba(255,100,100,0.7)', borderColor: 'rgba(255,45,85,0.25)', background: 'rgba(255,45,85,0.05)', cursor: 'pointer' }}>
                 ⏏ DISCONNECT
               </button>
             </div>
@@ -239,8 +277,9 @@ export default function WalletButton({ compact = false }: { compact?: boolean })
   );
 }
 
-function WalletOption({ name, icon, installed, loading, accentColor, onClick }: {
-  name: string; icon: string; installed: boolean; loading: boolean; accentColor: string; onClick: () => void;
+function WalletOption({ name, icon, installed, loading, accentColor, isMobile, mobileLabel, onClick }: {
+  name: string; icon: string; installed: boolean; loading: boolean;
+  accentColor: string; isMobile: boolean; mobileLabel: string; onClick: () => void;
 }) {
   const [hov, setHov] = useState(false);
   return (
@@ -248,22 +287,25 @@ function WalletOption({ name, icon, installed, loading, accentColor, onClick }: 
       onClick={onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      className="w-full flex items-center gap-3 px-5 py-3.5 transition-all border-b"
+      className="w-full flex items-center gap-3 px-5 py-4 transition-all border-b"
       style={{
         borderColor: 'rgba(255,255,255,0.06)',
         background: hov ? `${accentColor}18` : 'transparent',
-        boxShadow: hov ? `inset 0 0 20px ${accentColor}0a` : 'none',
+        cursor: 'pointer',
       }}>
-      <span style={{ fontSize: '22px' }}>{icon}</span>
+      <span style={{ fontSize: '24px' }}>{icon}</span>
       <div className="flex-1 text-left">
-        <div className="font-orbitron font-bold" style={{ color: hov ? accentColor : 'rgba(255,255,255,0.85)', fontSize: '13px', letterSpacing: '0.08em' }}>
+        <div className="font-orbitron font-bold" style={{ color: hov ? accentColor : 'rgba(255,255,255,0.9)', fontSize: '14px', letterSpacing: '0.08em' }}>
           {name}
         </div>
-        <div className="font-mono" style={{ color: installed ? 'rgba(0,255,157,0.6)' : 'rgba(255,255,255,0.25)', fontSize: '10px', marginTop: '1px' }}>
-          {loading ? 'Connecting...' : installed ? 'Detected ✓' : 'Click to install'}
+        <div className="font-mono" style={{
+          color: installed ? 'rgba(0,255,157,0.7)' : hov ? accentColor : 'rgba(255,255,255,0.3)',
+          fontSize: '10px', marginTop: '2px',
+        }}>
+          {loading ? 'Connecting...' : isMobile ? mobileLabel : (installed ? 'Detected ✓' : 'Click to install')}
         </div>
       </div>
-      <span style={{ color: hov ? accentColor : 'rgba(255,255,255,0.2)', fontSize: '16px' }}>→</span>
+      <span style={{ color: hov ? accentColor : 'rgba(255,255,255,0.25)', fontSize: '18px' }}>→</span>
     </button>
   );
 }
