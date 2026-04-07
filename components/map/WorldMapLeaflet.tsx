@@ -1320,32 +1320,38 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         GEOWARS MATRIX · GLOBAL TACTICAL OVERVIEW
       </div>
 
-      {/* ── Expand / Collapse button — top-right corner ── */}
+      {/* ── Expand / Collapse button ── */}
       {onExpandToggle && (
         <button
           onClick={onExpandToggle}
-          title={isExpanded ? 'Collapse map (F / Esc)' : 'Expand map fullscreen (F)'}
+          title={isExpanded ? 'Collapse map (Esc)' : 'Expand map fullscreen (F)'}
           style={{
-            position: 'absolute', top: 10, right: 10, zIndex: 620,
+            position: 'absolute',
+            bottom: isExpanded ? 'auto' : 12,
+            top: isExpanded ? 12 : 'auto',
+            right: 12,
+            zIndex: 650,
             fontFamily: 'Share Tech Mono, monospace',
-            fontSize: '11px', letterSpacing: '0.14em',
+            fontSize: '12px', letterSpacing: '0.16em',
             color: isExpanded ? '#ff2d55' : '#00f5ff',
-            background: isExpanded ? 'rgba(255,45,85,0.12)' : 'rgba(0,200,255,0.1)',
-            border: `1px solid ${isExpanded ? 'rgba(255,45,85,0.45)' : 'rgba(0,200,255,0.4)'}`,
-            borderRadius: '6px',
-            padding: '5px 10px',
+            background: isExpanded
+              ? 'rgba(20,0,5,0.92)'
+              : 'rgba(0,8,20,0.92)',
+            border: `1.5px solid ${isExpanded ? 'rgba(255,45,85,0.7)' : 'rgba(0,245,255,0.6)'}`,
+            borderRadius: '8px',
+            padding: '7px 14px',
             cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '5px',
-            backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'center', gap: '6px',
+            backdropFilter: 'blur(12px)',
             boxShadow: isExpanded
-              ? '0 0 14px rgba(255,45,85,0.2)'
-              : '0 0 14px rgba(0,200,255,0.15)',
+              ? '0 0 20px rgba(255,45,85,0.35), 0 2px 8px rgba(0,0,0,0.8)'
+              : '0 0 20px rgba(0,245,255,0.3), 0 2px 8px rgba(0,0,0,0.8)',
             transition: 'all 0.15s ease',
           }}
         >
           {isExpanded
-            ? <><span style={{ fontSize: '13px', lineHeight: 1 }}>⊠</span> COLLAPSE</>
-            : <><span style={{ fontSize: '13px', lineHeight: 1 }}>⤢</span> EXPAND</>}
+            ? <><span style={{ fontSize: '16px', lineHeight: 1 }}>⊠</span> COLLAPSE</>
+            : <><span style={{ fontSize: '16px', lineHeight: 1 }}>⤢</span> FULL MAP</>}
         </button>
       )}
 
