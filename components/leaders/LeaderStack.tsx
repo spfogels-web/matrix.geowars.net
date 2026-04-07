@@ -9,6 +9,7 @@ interface Props {
   isRunning: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  onCollapse?: () => void;
   messages: LeaderMessage[];
 }
 
@@ -116,15 +117,15 @@ function LeaderCard({
   const role = (leader as Leader & { role?: string }).role;
   const flagCode = FLAG_CODE[leader.id];
 
-  const nm  = isExpanded ? '17px' : '15px';
-  const rl  = isExpanded ? '12px' : '11px';
-  const ct  = isExpanded ? '11px' : '10px';
-  const st  = isExpanded ? '11px' : '10px';
-  const ag  = isExpanded ? '34px' : '28px';
-  const qt  = isExpanded ? '14px' : '13px';
-  const ac2 = isExpanded ? '12px' : '11px';
-  const stmLen  = isExpanded ? 300 : 180;
-  const avatarSize = isExpanded ? 80 : 70;
+  const nm  = isExpanded ? '16px' : '13px';
+  const rl  = isExpanded ? '11px' : '10px';
+  const ct  = isExpanded ? '10px' : '9px';
+  const st  = isExpanded ? '10px' : '9px';
+  const ag  = isExpanded ? '32px' : '24px';
+  const qt  = isExpanded ? '13px' : '11px';
+  const ac2 = isExpanded ? '11px' : '10px';
+  const stmLen  = isExpanded ? 300 : 140;
+  const avatarSize = isExpanded ? 72 : 56;
 
   const isSpeaking = phase === 'thinking' || phase === 'typing';
   const cardIsActive = isActive || isSpeaking;
@@ -478,7 +479,7 @@ function LeaderCard({
   );
 }
 
-export default function LeaderStack({ leaders, activeIds, allLeaders: _allLeaders, isRunning, isExpanded, onToggleExpand, messages }: Props) {
+export default function LeaderStack({ leaders, activeIds, allLeaders: _allLeaders, isRunning, isExpanded, onToggleExpand, onCollapse, messages }: Props) {
   const [showAll, setShowAll] = useState(false);
   const STATUS_PRIORITY: Record<string, number> = { at_war: 0, mobilizing: 1, hostile: 2, critical: 3, alert: 4, diplomatic: 5, stable: 6 };
   const activeLeaders = leaders
@@ -501,19 +502,29 @@ export default function LeaderStack({ leaders, activeIds, allLeaders: _allLeader
     <div className="h-full flex flex-col gap-2 overflow-hidden">
 
       {/* Panel header */}
-      <div className="shrink-0 flex items-center justify-between px-3 py-2.5 rounded-xl panel"
+      <div className="shrink-0 flex items-center justify-between px-3 py-2 rounded-xl panel"
         style={{ borderColor: 'rgba(120,60,255,0.25)' }}>
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full status-blink" style={{ backgroundColor: '#b44fff', boxShadow: '0 0 8px #b44fff' }} />
-          <span className="font-orbitron font-bold" style={{ color: '#b44fff', fontSize: '12px', letterSpacing: '0.2em' }}>
+          <div className="w-2 h-2 rounded-full status-blink" style={{ backgroundColor: '#b44fff', boxShadow: '0 0 8px #b44fff' }} />
+          <span className="font-orbitron font-bold" style={{ color: '#b44fff', fontSize: '11px', letterSpacing: '0.18em' }}>
             WORLD LEADERS
           </span>
         </div>
-        <button onClick={onToggleExpand}
-          className="font-mono px-3 py-1 rounded border transition-all"
-          style={{ fontSize: '11px', color: 'rgba(180,79,255,0.9)', borderColor: 'rgba(120,60,255,0.35)', background: 'rgba(120,60,255,0.12)' }}>
-          {isExpanded ? '◀ COLLAPSE' : '▶ EXPAND'}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={onToggleExpand}
+            className="font-mono px-2 py-0.5 rounded border transition-all"
+            style={{ fontSize: '10px', color: 'rgba(180,79,255,0.9)', borderColor: 'rgba(120,60,255,0.35)', background: 'rgba(120,60,255,0.12)' }}>
+            {isExpanded ? '◀' : '▶ EXPAND'}
+          </button>
+          {onCollapse && (
+            <button onClick={onCollapse}
+              className="font-mono px-2 py-0.5 rounded border transition-all"
+              style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', lineHeight: 1 }}
+              title="Minimize World Leaders">
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Active leader cards */}

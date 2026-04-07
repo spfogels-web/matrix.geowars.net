@@ -32,7 +32,8 @@ export default function Home() {
   const [state, setState]           = useState<WorldState | null>(null);
   const [feedExpanded, setFeedExpanded] = useState(false);
   const [mapExpanded, setMapExpanded]   = useState(false);
-  const [leftExpanded, setLeftExpanded] = useState(false);
+  const [leftExpanded, setLeftExpanded]   = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [chatOpen, setChatOpen]         = useState(false);
   const [botPanelOpen, setBotPanelOpen] = useState(false);
   const [intelExpanded, setIntelExpanded] = useState(false);
@@ -511,18 +512,42 @@ export default function Home() {
           {/* ── Main layout ── */}
           <main className="flex-1 flex gap-2 p-2 overflow-hidden min-h-0">
 
-            {/* Left: Leader Stack */}
-            <div className="shrink-0 overflow-hidden transition-all duration-300" style={{ width: leftExpanded ? '500px' : '310px' }}>
-              <LeaderStack
-                leaders={state.leaders.filter(l => state.activeLeaderIds.includes(l.id))}
-                activeIds={state.activeLeaderIds}
-                allLeaders={state.leaders}
-                isRunning={state.isRunning && !state.isPaused}
-                isExpanded={leftExpanded}
-                onToggleExpand={() => setLeftExpanded(v => !v)}
-                messages={state.messages}
-              />
-            </div>
+            {/* Left: Leader Stack — collapses to a thin reopen strip */}
+            {leftCollapsed ? (
+              <div
+                className="shrink-0 flex items-center justify-center cursor-pointer transition-all duration-300"
+                style={{
+                  width: '18px',
+                  background: 'rgba(8,3,20,0.95)',
+                  border: '1px solid rgba(180,79,255,0.25)',
+                  borderRadius: '8px',
+                  writingMode: 'vertical-rl',
+                }}
+                onClick={() => setLeftCollapsed(false)}
+                title="Expand World Leaders"
+              >
+                <span className="font-orbitron font-bold" style={{
+                  color: 'rgba(180,79,255,0.6)', fontSize: '8px', letterSpacing: '0.2em',
+                  transform: 'rotate(180deg)', userSelect: 'none',
+                }}>
+                  ▶ LEADERS
+                </span>
+              </div>
+            ) : (
+              <div className="shrink-0 overflow-hidden transition-all duration-300"
+                style={{ width: leftExpanded ? '460px' : '260px' }}>
+                <LeaderStack
+                  leaders={state.leaders.filter(l => state.activeLeaderIds.includes(l.id))}
+                  activeIds={state.activeLeaderIds}
+                  allLeaders={state.leaders}
+                  isRunning={state.isRunning && !state.isPaused}
+                  isExpanded={leftExpanded}
+                  onToggleExpand={() => setLeftExpanded(v => !v)}
+                  onCollapse={() => { setLeftCollapsed(true); setLeftExpanded(false); }}
+                  messages={state.messages}
+                />
+              </div>
+            )}
 
             {/* Center: World Map + Live Feed */}
             <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0 relative">
