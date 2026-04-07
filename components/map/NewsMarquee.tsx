@@ -75,7 +75,7 @@ export default function NewsMarquee({ simIntel, tension }: Props) {
 
         {/* Scrolling content */}
         <div className="flex-1 overflow-hidden relative" style={{ cursor: 'default' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', animation: `ticker-move 150s linear infinite`, willChange: 'transform' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', animation: `ticker-move 55s linear infinite`, willChange: 'transform' }}>
             {display.map((item, i) => (
               <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
                 <span style={{ color: item.isLive ? '#ffd700' : 'rgba(255,45,85,0.7)', fontSize: isMobile ? '10px' : '14px', margin: isMobile ? '0 12px' : '0 20px' }}>

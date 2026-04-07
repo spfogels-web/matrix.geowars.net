@@ -270,7 +270,7 @@ export default function Home() {
               <div style={{ flex: 1, overflow: 'hidden', height: '100%', position: 'relative' }}>
                 <div style={{
                   display: 'flex', alignItems: 'center', height: '100%',
-                  animation: 'ticker-scroll 35s linear infinite',
+                  animation: 'ticker-scroll 18s linear infinite',
                   whiteSpace: 'nowrap',
                 }}>
                   {(state.breakingIntel?.length ? state.breakingIntel : ['MONITORING GLOBAL THREAT VECTORS', 'AI AGENTS STANDING BY', 'SIMULATION READY']).map((item, i) => (
@@ -387,9 +387,9 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Tab content — feed/leaders scroll freely; intel fills height with internal scroll */}
+            {/* Tab content — flex-col so h-full resolves on iOS Safari */}
             {activeTab === 'feed' && (
-              <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="flex-1 flex flex-col min-h-0">
                 <LiveFeed
                   events={state.events}
                   messages={state.messages}
