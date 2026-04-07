@@ -796,7 +796,7 @@ interface Props {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[], worldState, focusedEvent }: Props) {
+export default function WorldMapLeaflet({ conflictZones, events, tension, isRunning, leaders, breakingIntel=[], worldState, focusedEvent, isExpanded=false, onExpandToggle }: Props) {
   const [arcs, setArcs]   = useState<Arc[]>([]);
   const [units, setUnits] = useState<MapUnit[]>([]);
   const [flashColor, setFlashColor] = useState<string|null>(null);
@@ -880,6 +880,17 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Keyboard shortcut: F = expand/collapse, Escape = collapse ────────────
+  useEffect(() => {
+    if (!onExpandToggle) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'f' || e.key === 'F') { onExpandToggle(); }
+      if (e.key === 'Escape' && isExpanded) { onExpandToggle(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isExpanded, onExpandToggle]);
 
   // ── Unit animation loop ────────────────────────────────────────────────────
   useEffect(()=>{
@@ -1308,6 +1319,35 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       }}>
         GEOWARS MATRIX · GLOBAL TACTICAL OVERVIEW
       </div>
+
+      {/* ── Expand / Collapse button — top-right corner ── */}
+      {onExpandToggle && (
+        <button
+          onClick={onExpandToggle}
+          title={isExpanded ? 'Collapse map (F / Esc)' : 'Expand map fullscreen (F)'}
+          style={{
+            position: 'absolute', top: 10, right: 10, zIndex: 620,
+            fontFamily: 'Share Tech Mono, monospace',
+            fontSize: '11px', letterSpacing: '0.14em',
+            color: isExpanded ? '#ff2d55' : '#00f5ff',
+            background: isExpanded ? 'rgba(255,45,85,0.12)' : 'rgba(0,200,255,0.1)',
+            border: `1px solid ${isExpanded ? 'rgba(255,45,85,0.45)' : 'rgba(0,200,255,0.4)'}`,
+            borderRadius: '6px',
+            padding: '5px 10px',
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '5px',
+            backdropFilter: 'blur(8px)',
+            boxShadow: isExpanded
+              ? '0 0 14px rgba(255,45,85,0.2)'
+              : '0 0 14px rgba(0,200,255,0.15)',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          {isExpanded
+            ? <><span style={{ fontSize: '13px', lineHeight: 1 }}>⊠</span> COLLAPSE</>
+            : <><span style={{ fontSize: '13px', lineHeight: 1 }}>⤢</span> EXPAND</>}
+        </button>
+      )}
 
       {/* ── DEATH TOLL — top right ── */}
       <DeathTollCounter deaths={releasedDeaths} isRunning={isRunning} />
