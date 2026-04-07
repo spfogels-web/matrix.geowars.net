@@ -1327,7 +1327,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
           title={isExpanded ? 'Collapse map (Esc)' : 'Expand map fullscreen (F)'}
           style={{
             position: 'absolute',
-            bottom: isExpanded ? 'auto' : 12,
+            bottom: isExpanded ? 'auto' : 46,
             top: isExpanded ? 12 : 'auto',
             right: 12,
             zIndex: 650,
@@ -1418,16 +1418,18 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
         />
       )}
 
-      {/* ── Hub toggle button (bottom HUD area, bottom-right) ── */}
+      {/* ── Hub toggle + Expand — bottom-right, side by side ── */}
       <button
         onClick={() => setShowHubs(v => !v)}
         style={{
-          position: 'absolute', bottom: 28, right: 12, zIndex: 612,
-          fontFamily: 'Share Tech Mono, monospace', fontSize: '9px', letterSpacing: '0.16em',
-          color: showHubs ? '#00f5ff' : 'rgba(0,200,255,0.3)',
-          background: showHubs ? 'rgba(0,200,255,0.1)' : 'rgba(0,0,0,0.6)',
-          border: `1px solid ${showHubs ? 'rgba(0,200,255,0.4)' : 'rgba(0,200,255,0.12)'}`,
-          borderRadius: '4px', padding: '3px 9px', cursor: 'pointer', transition: 'all 0.2s',
+          position: 'absolute', bottom: 46, right: 132, zIndex: 651,
+          fontFamily: 'Share Tech Mono, monospace', fontSize: '12px', letterSpacing: '0.14em',
+          color: showHubs ? '#00f5ff' : 'rgba(0,200,255,0.35)',
+          background: showHubs ? 'rgba(0,8,20,0.92)' : 'rgba(0,4,12,0.92)',
+          border: `1.5px solid ${showHubs ? 'rgba(0,245,255,0.5)' : 'rgba(0,200,255,0.18)'}`,
+          borderRadius: '8px', padding: '7px 14px', cursor: 'pointer', transition: 'all 0.2s',
+          backdropFilter: 'blur(12px)',
+          boxShadow: showHubs ? '0 0 14px rgba(0,245,255,0.2), 0 2px 8px rgba(0,0,0,0.8)' : '0 2px 8px rgba(0,0,0,0.8)',
         }}
       >
         ▲ HUBS {showHubs ? 'ON' : 'OFF'}
@@ -1437,7 +1439,7 @@ export default function WorldMapLeaflet({ conflictZones, events, tension, isRunn
       {selectedHub && (
         <div
           style={{
-            position: 'absolute', bottom: 52, right: 12, zIndex: 612,
+            position: 'absolute', bottom: 96, right: 12, zIndex: 612,
             background: 'rgba(0,2,14,0.97)',
             border: '1px solid rgba(0,200,255,0.35)',
             borderRadius: '10px', padding: '10px 14px',
