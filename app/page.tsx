@@ -28,7 +28,7 @@ async function runTick(pendingRef: React.MutableRefObject<boolean>, setProcessin
 export default function Home() {
   const { setShowLeaderboard, resetSimPredictions } = useGame();
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab]   = useState<'feed'|'leaders'|'intel'>('feed');
+  const [activeTab, setActiveTab]   = useState<'feed'|'leaders'|'intel'|'agents'|'comms'|'board'>('feed');
   const [state, setState]           = useState<WorldState | null>(null);
   const [feedExpanded, setFeedExpanded] = useState(false);
   const [mapExpanded, setMapExpanded]   = useState(false);
@@ -218,14 +218,52 @@ export default function Home() {
           {/* Mobile main */}
           <main className="flex-1 flex flex-col overflow-hidden min-h-0" style={{ position: 'relative' }}>
 
-            {/* World Briefing — covers main area only, header stays interactive */}
+            {/* World Briefing — full screen, only shown before sim starts */}
             {!state.isRunning && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
+              <div style={{ position: 'absolute', inset: 0, zIndex: 60, overflowY: 'auto' }}>
                 <WorldBriefing state={state} onInitiate={() => control('start')} />
               </div>
             )}
 
-            {/* Map — fixed height */}
+            {/* ── Logo + scrolling world feed strip ── */}
+            <div className="shrink-0 flex items-center gap-0 overflow-hidden" style={{
+              height: '32px',
+              background: 'rgba(0,0,0,0.95)',
+              borderBottom: '1px solid rgba(0,245,255,0.18)',
+              position: 'relative', zIndex: 55,
+            }}>
+              {/* Logo */}
+              <div className="shrink-0 flex items-center gap-1.5 px-3 font-orbitron font-black"
+                style={{
+                  height: '100%', borderRight: '1px solid rgba(0,245,255,0.18)',
+                  background: 'rgba(0,245,255,0.05)',
+                  color: '#00f5ff', fontSize: '10px', letterSpacing: '0.2em', whiteSpace: 'nowrap',
+                  textShadow: '0 0 12px rgba(0,245,255,0.7)',
+                }}>
+                <span className="status-blink" style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#00f5ff', boxShadow: '0 0 6px #00f5ff' }} />
+                GEOWARS MATRIX
+              </div>
+              {/* Scrolling intel ticker */}
+              <div style={{ flex: 1, overflow: 'hidden', height: '100%', position: 'relative' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', height: '100%',
+                  animation: 'ticker-scroll 35s linear infinite',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {(state.breakingIntel?.length ? state.breakingIntel : ['MONITORING GLOBAL THREAT VECTORS', 'AI AGENTS STANDING BY', 'SIMULATION READY']).map((item, i) => (
+                    <span key={i} className="font-mono" style={{
+                      color: 'rgba(0,245,255,0.7)', fontSize: '9px', letterSpacing: '0.06em',
+                      paddingRight: '60px',
+                    }}>
+                      <span style={{ color: 'rgba(255,215,0,0.6)', marginRight: '6px' }}>◆</span>
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Map */}
             <div className="shrink-0 overflow-hidden panel relative"
               style={{ height: '38vh', borderLeft: 'none', borderRight: 'none', borderRadius: 0, borderColor: 'rgba(120,60,255,0.18)' }}>
               <WorldMap
@@ -237,100 +275,75 @@ export default function Home() {
               />
             </div>
 
-            {/* Action bar: AGENTS · COMMS · LEADERBOARD · WALLET */}
-            <div className="shrink-0 grid px-2 py-1.5 gap-1.5" style={{
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              background: 'rgba(6,3,15,0.98)',
-              borderBottom: '1px solid rgba(120,60,255,0.1)',
+            {/* Connect Wallet row — above tabs */}
+            <div className="shrink-0 flex items-center justify-center px-3" style={{
+              height: '44px',
+              background: 'rgba(4,2,12,0.98)',
+              borderBottom: '1px solid rgba(0,245,255,0.1)',
               position: 'relative', zIndex: 55,
             }}>
-              <button onClick={() => setBotPanelOpen(v => !v)}
-                className="font-orbitron font-bold"
-                style={{
-                  fontSize: '9px', padding: '6px 4px', borderRadius: '7px',
-                  border: botPanelOpen ? '1px solid #b44fff' : '1px solid rgba(180,79,255,0.4)',
-                  background: botPanelOpen ? 'rgba(180,79,255,0.22)' : 'rgba(180,79,255,0.07)',
-                  color: '#d090ff', cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-                  animation: botPanelOpen ? 'none' : 'agents-btn-pulse 2.2s ease-in-out infinite',
-                  letterSpacing: '0.08em',
-                }}>
-                <span style={{ fontSize: '15px', lineHeight: 1 }}>🤖</span>
-                AGENTS
-                {(state.bots ?? []).length > 0 && (
-                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '8px', padding: '0 4px', fontSize: '8px', fontWeight: 'bold', lineHeight: '13px' }}>
-                    {(state.bots ?? []).length}
-                  </span>
-                )}
-              </button>
-
-              <button onClick={() => setChatOpen(v => !v)}
-                className="font-orbitron font-bold"
-                style={{
-                  fontSize: '9px', padding: '6px 4px', borderRadius: '7px',
-                  border: chatOpen ? '1px solid rgba(180,79,255,0.7)' : '1px solid rgba(120,60,255,0.3)',
-                  background: chatOpen ? 'rgba(180,79,255,0.16)' : 'rgba(120,60,255,0.06)',
-                  color: chatOpen ? '#b44fff' : 'rgba(180,79,255,0.7)', cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-                  letterSpacing: '0.08em',
-                }}>
-                <span style={{ fontSize: '15px', lineHeight: 1 }}>📡</span>
-                COMMS
-                {state.messages.length > 0 && (
-                  <span style={{ background: '#b44fff', color: '#000', borderRadius: '8px', padding: '0 4px', fontSize: '8px', fontWeight: 'bold', lineHeight: '13px' }}>
-                    {Math.min(state.messages.length, 99)}
-                  </span>
-                )}
-              </button>
-
-              <button onClick={() => setShowLeaderboard(true)}
-                className="font-orbitron font-bold"
-                style={{
-                  fontSize: '9px', padding: '6px 4px', borderRadius: '7px',
-                  border: '1px solid rgba(255,215,0,0.3)',
-                  background: 'rgba(255,215,0,0.06)',
-                  color: 'rgba(255,215,0,0.8)', cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-                  letterSpacing: '0.08em',
-                }}>
-                <span style={{ fontSize: '15px', lineHeight: 1 }}>🏆</span>
-                BOARD
-              </button>
-
-              <div style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                borderRadius: '7px', border: '1px solid rgba(0,245,255,0.2)',
-                background: 'rgba(0,245,255,0.04)', padding: '4px',
-              }}>
-                <WalletButton />
-              </div>
+              <WalletButton />
             </div>
 
-            {/* Tab bar */}
+            {/* Unified tab bar: AGENTS · COMMS · BOARD | FEED · LEADERS · INTEL */}
             <div className="shrink-0 flex" style={{
-              height: '42px',
+              height: '40px',
               background: 'rgba(6,3,15,0.98)',
               borderBottom: '1px solid rgba(120,60,255,0.18)',
               position: 'relative', zIndex: 55,
             }}>
               {([
-                ['feed',    '📡', 'FEED'],
+                ['agents', '🤖', 'AGENTS', '#b44fff'],
+                ['comms',  '📡', 'COMMS',  '#b44fff'],
+                ['board',  '🏆', 'BOARD',  '#ffd700'],
+              ] as const).map(([tab, icon, label, accent]) => {
+                const isModalOpen = tab === 'agents' ? botPanelOpen : tab === 'comms' ? chatOpen : false;
+                const isActive = activeTab === tab || isModalOpen;
+                return (
+                  <button key={tab}
+                    onClick={() => {
+                      if (tab === 'agents') { setBotPanelOpen(v => !v); setActiveTab('agents'); }
+                      else if (tab === 'comms') { setChatOpen(v => !v); setActiveTab('comms'); }
+                      else { setShowLeaderboard(true); setActiveTab('board'); }
+                    }}
+                    className="flex-1 font-orbitron font-bold"
+                    style={{
+                      fontSize: '8px', letterSpacing: '0.1em',
+                      color: isActive ? accent : 'rgba(200,210,240,0.3)',
+                      background: isActive ? `${accent}12` : 'transparent',
+                      border: 'none',
+                      borderBottom: isActive ? `2px solid ${accent}` : '2px solid transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.18s',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
+                    }}>
+                    <span style={{ fontSize: '11px', lineHeight: 1 }}>{icon}</span>
+                    {label}
+                  </button>
+                );
+              })}
+
+              {/* Divider */}
+              <div style={{ width: '1px', background: 'rgba(120,60,255,0.25)', margin: '6px 0' }} />
+
+              {([
+                ['feed',    '📰', 'FEED'],
                 ['leaders', '👥', 'LEADERS'],
                 ['intel',   '🔍', 'INTEL'],
               ] as const).map(([tab, icon, label]) => (
                 <button key={tab} onClick={() => setActiveTab(tab)}
                   className="flex-1 font-orbitron font-bold"
                   style={{
-                    fontSize: '10px', letterSpacing: '0.12em',
-                    color: activeTab === tab ? '#00f5ff' : 'rgba(200,210,240,0.35)',
+                    fontSize: '8px', letterSpacing: '0.1em',
+                    color: activeTab === tab ? '#00f5ff' : 'rgba(200,210,240,0.3)',
                     background: activeTab === tab ? 'rgba(0,245,255,0.06)' : 'transparent',
                     border: 'none',
                     borderBottom: activeTab === tab ? '2px solid #00f5ff' : '2px solid transparent',
                     cursor: 'pointer',
-                    transition: 'color 0.18s, background 0.18s, border-color 0.18s',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                    transition: 'all 0.18s',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
                   }}>
-                  <span style={{ fontSize: '13px' }}>{icon}</span>
+                  <span style={{ fontSize: '11px', lineHeight: 1 }}>{icon}</span>
                   {label}
                 </button>
               ))}
